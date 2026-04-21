@@ -1,0 +1,11 @@
+bin/
+tmp/
+logs/
+uploads/
+*.log
+.env
+coverage.out
+coverage.html
+vendor/
+.idea/
+.vscode/

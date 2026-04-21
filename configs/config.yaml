@@ -1,0 +1,69 @@
+# SaaS 微信商城 - 应用配置
+
+app:
+  name: "wechat-mall-saas"
+  env: "development"
+  host: "0.0.0.0"
+  port: 8080
+  mode: "debug"
+
+database:
+  driver: "postgres"
+  host: "127.0.0.1"
+  port: 5433
+  user: "postgres"
+  password: "postgres123"
+  name: "wechat_mall_saas"
+  sslmode: "disable"
+  max_open_conns: 100
+  max_idle_conns: 20
+  conn_max_lifetime: 3600
+
+redis:
+  host: "127.0.0.1"
+  port: 6379
+  password: ""
+  db: 0
+  pool_size: 100
+  min_idle_conns: 10
+
+jwt:
+  secret: "change-this-secret-in-production"
+  expire_hours: 168           # 7 天
+  refresh_expire_hours: 720   # 30 天
+
+wechat:
+  app_id: ""                 # 服务商 AppID（服务商模式必填）
+  app_secret: ""            # 服务商 AppSecret
+  token: ""                 # 微信服务器验证 Token
+  encoding_aes_key: ""       # 消息加密 AES Key
+
+storage:
+  type: "local"              # local / oss / cos
+  local:
+    path: "./uploads"
+    base_url: "http://localhost:8080/uploads"
+  oss:
+    endpoint: ""
+    access_key: ""
+    secret_key: ""
+    bucket: ""
+    base_url: ""
+  cos:
+    region: ""
+    secret_id: ""
+    secret_key: ""
+    bucket: ""
+    base_url: ""
+
+logging:
+  level: "debug"             # debug / info / warn / error
+  filename: "logs/app.log"
+  max_size: 100             # MB
+  max_backups: 10
+  max_age: 7                # 天
+
+rate_limit:
+  enabled: true
+  qps: 1000
+  burst: 2000
