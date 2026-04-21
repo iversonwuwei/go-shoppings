@@ -153,13 +153,21 @@ func NewCategoryRepo(db *gorm.DB) *CategoryRepo { return &CategoryRepo{db: db} }
 
 func (r *CategoryRepo) List(ctx context.Context) ([]model.ProductCategory, error) {
 	var rows []model.ProductCategory
-	err := TenantDB(ctx, r.db).Where("status = 1").Order("sort DESC, id ASC").Find(&rows).Error
+	// 分类改为由平台统一管理（tenant_id = 0），所有租户共享
+	err := r.db.WithContext(ctx).Where("tenant_id = 0 AND status = 1").Order("sort DESC, id ASC").Find(&rows).Error
+	return rows, err
+}
+
+// ListAll 平台端列表（含未启用）
+func (r *CategoryRepo) ListAll(ctx context.Context) ([]model.ProductCategory, error) {
+	var rows []model.ProductCategory
+	err := r.db.WithContext(ctx).Where("tenant_id = 0").Order("sort DESC, id ASC").Find(&rows).Error
 	return rows, err
 }
 
 func (r *CategoryRepo) FindByID(ctx context.Context, id uint64) (*model.ProductCategory, error) {
 	var c model.ProductCategory
-	if err := TenantDB(ctx, r.db).First(&c, id).Error; err != nil {
+	if err := r.db.WithContext(ctx).Where("tenant_id = 0").First(&c, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
@@ -169,14 +177,15 @@ func (r *CategoryRepo) FindByID(ctx context.Context, id uint64) (*model.ProductC
 }
 
 func (r *CategoryRepo) Create(ctx context.Context, c *model.ProductCategory) error {
-	c.TenantID = EnsureTenant(ctx)
+	c.TenantID = 0
 	return r.db.WithContext(ctx).Create(c).Error
 }
 
 func (r *CategoryRepo) Update(ctx context.Context, c *model.ProductCategory) error {
-	return TenantDB(ctx, r.db).Save(c).Error
+	c.TenantID = 0
+	return r.db.WithContext(ctx).Where("tenant_id = 0").Save(c).Error
 }
 
 func (r *CategoryRepo) Delete(ctx context.Context, id uint64) error {
-	return TenantDB(ctx, r.db).Delete(&model.ProductCategory{}, id).Error
+	return r.db.WithContext(ctx).Where("tenant_id = 0").Delete(&model.ProductCategory{}, id).Error
 }

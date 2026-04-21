@@ -25,7 +25,7 @@ func (ProductCategory) TableName() string { return "product_categories" }
 type Product struct {
 	ID             uint64           `gorm:"primaryKey;autoIncrement" json:"id"`
 	TenantID       uint64           `gorm:"not null;index" json:"tenant_id"`
-	CategoryID     uint64           `gorm:"index" json:"category_id"`
+	CategoryID     *uint64          `gorm:"index" json:"category_id,omitempty"`
 	Name           string           `gorm:"size:200;not null" json:"name"`
 	Subtitle       string           `gorm:"size:500" json:"subtitle"`
 	CoverImage     string           `gorm:"size:255;not null" json:"cover_image"`

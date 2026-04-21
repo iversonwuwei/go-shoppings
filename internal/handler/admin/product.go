@@ -120,6 +120,16 @@ func (h *CategoryHandler) List(c *gin.Context) {
 	response.OK(c, rows)
 }
 
+// ListAll 平台端：包含禁用
+func (h *CategoryHandler) ListAll(c *gin.Context) {
+	rows, err := h.svc.ListAll(c.Request.Context())
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, rows)
+}
+
 func (h *CategoryHandler) Create(c *gin.Context) {
 	var m model.ProductCategory
 	if err := c.ShouldBindJSON(&m); err != nil {

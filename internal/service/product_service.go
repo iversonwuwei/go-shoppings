@@ -47,6 +47,9 @@ func (s *ProductService) Detail(ctx context.Context, id uint64) (*model.Product,
 }
 
 func (s *ProductService) Create(ctx context.Context, p *model.Product) error {
+	if p.CategoryID != nil && *p.CategoryID == 0 {
+		p.CategoryID = nil
+	}
 	count, err := s.products.Count(ctx)
 	if err != nil {
 		return err
@@ -68,6 +71,9 @@ func (s *ProductService) Create(ctx context.Context, p *model.Product) error {
 }
 
 func (s *ProductService) Update(ctx context.Context, p *model.Product) error {
+	if p.CategoryID != nil && *p.CategoryID == 0 {
+		p.CategoryID = nil
+	}
 	if p.IsVirtual == 1 {
 		if err := s.tenants.RequireFeature(ctx, FeatureVirtualProduct); err != nil {
 			return err
@@ -103,6 +109,11 @@ func NewCategoryService(r *repository.CategoryRepo) *CategoryService {
 
 func (s *CategoryService) List(ctx context.Context) ([]model.ProductCategory, error) {
 	return s.repo.List(ctx)
+}
+
+// ListAll 平台端：包含未启用
+func (s *CategoryService) ListAll(ctx context.Context) ([]model.ProductCategory, error) {
+	return s.repo.ListAll(ctx)
 }
 
 func (s *CategoryService) Create(ctx context.Context, c *model.ProductCategory) error {

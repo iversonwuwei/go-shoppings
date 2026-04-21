@@ -157,6 +157,14 @@ func New(d *Deps) *gin.Engine {
 		// 平台管理 私有部署
 		sec.GET("/deployments", d.PlatformDeploymentH.List)
 		sec.PUT("/deployments", d.PlatformDeploymentH.Update)
+
+		// 平台统一管理 商品分类（tenant_id=0，租户共享）
+		catGrp := sec.Group("/categories")
+		catGrp.Use(middleware.RequireRole(admin.PlatformRoleSuper, admin.PlatformRoleOperator))
+		catGrp.GET("", d.AdminCategoryH.ListAll)
+		catGrp.POST("", d.AdminCategoryH.Create)
+		catGrp.PUT("/:id", d.AdminCategoryH.Update)
+		catGrp.DELETE("/:id", d.AdminCategoryH.Delete)
 	}
 
 	// 公开端（产品介绍页 / 申请入驻）
@@ -239,9 +247,7 @@ func New(d *Deps) *gin.Engine {
 		adAuth.POST("/products/:id/skus", middleware.RequireFeature(service.FeatureMultiSKU), d.AdminProductH.CreateSKU)
 
 		adAuth.GET("/categories", d.AdminCategoryH.List)
-		adAuth.POST("/categories", d.AdminCategoryH.Create)
-		adAuth.PUT("/categories/:id", d.AdminCategoryH.Update)
-		adAuth.DELETE("/categories/:id", d.AdminCategoryH.Delete)
+		// 分类改由平台统一管理，租户端只读
 
 		adAuth.GET("/orders", d.AdminOrderH.List)
 		adAuth.GET("/orders/:id", d.AdminOrderH.Detail)

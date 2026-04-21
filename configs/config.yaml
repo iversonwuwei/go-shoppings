@@ -47,7 +47,7 @@ wxpay:
   notify_url: "http://localhost:8080/api/v1/public/subscription/callback"
 
 storage:
-  type: "local"              # local / minio
+  type: "minio"              # local / minio
   local:
     path: "./uploads"
     base_url: "http://localhost:8080/uploads"
