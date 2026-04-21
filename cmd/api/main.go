@@ -136,6 +136,7 @@ func main() {
 		AdminSubH:          admin.NewSubscriptionHandler(subscriptionSvc),
 		PlatformSettingsH:  admin.NewPlatformSettingsHandler(settingsSvc),
 		PlatformGlobalH:    admin.NewPlatformGlobalSettingsHandler(platformSettingsRepo),
+		PlatformUsersH:     admin.NewPlatformUserHandler(adminRepo),
 
 		PlatformSmsH:        admin.NewPlatformSmsHandler(smsRepo),
 		PlatformApiAccessH:  admin.NewPlatformApiAccessHandler(apiTokenRepo),

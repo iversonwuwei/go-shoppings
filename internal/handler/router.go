@@ -45,6 +45,7 @@ type Deps struct {
 	AdminSubH          *admin.SubscriptionHandler
 	PlatformSettingsH  *admin.PlatformSettingsHandler
 	PlatformGlobalH    *admin.PlatformGlobalSettingsHandler
+	PlatformUsersH     *admin.PlatformUserHandler
 
 	PlatformSmsH        *admin.PlatformSmsHandler
 	PlatformApiAccessH  *admin.PlatformApiAccessHandler
@@ -111,6 +112,16 @@ func New(d *Deps) *gin.Engine {
 		// 平台全局设置（平台名 / Logo / 平台微信支付商户号 / 客服联系方式）
 		sec.GET("/settings", d.PlatformGlobalH.Get)
 		sec.PUT("/settings", d.PlatformGlobalH.Update)
+
+		// 平台用户管理（仅超级管理员可管理，其他角色只能查看自己）
+		sec.GET("/me", d.PlatformUsersH.Me)
+		userGrp := sec.Group("/users")
+		userGrp.Use(middleware.RequireRole(admin.PlatformRoleSuper))
+		userGrp.GET("", d.PlatformUsersH.List)
+		userGrp.POST("", d.PlatformUsersH.Create)
+		userGrp.PUT("/:id", d.PlatformUsersH.Update)
+		userGrp.POST("/:id/reset-password", d.PlatformUsersH.ResetPassword)
+		userGrp.DELETE("/:id", d.PlatformUsersH.Delete)
 
 		// 平台统一管理 短信通知（网关/模板/日志）
 		sec.GET("/sms/settings", d.PlatformSmsH.GetSettings)

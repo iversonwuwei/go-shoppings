@@ -144,6 +144,40 @@ func (r *AdminRepo) UpdateStatusByTenant(ctx context.Context, tenantID uint64, s
 		Update("status", status).Error
 }
 
+// ListPlatformAdmins 分页列出平台管理员（tenant_id=0）
+func (r *AdminRepo) ListPlatformAdmins(ctx context.Context, keyword string, page, size int) ([]model.Admin, int64, error) {
+	q := r.db.WithContext(ctx).Model(&model.Admin{}).Where("tenant_id = ?", 0)
+	if keyword != "" {
+		k := "%" + keyword + "%"
+		q = q.Where("username LIKE ? OR real_name LIKE ? OR phone LIKE ?", k, k, k)
+	}
+	var total int64
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	if page < 1 {
+		page = 1
+	}
+	if size < 1 || size > 200 {
+		size = 20
+	}
+	var rows []model.Admin
+	if err := q.Order("id DESC").Offset((page - 1) * size).Limit(size).Find(&rows).Error; err != nil {
+		return nil, 0, err
+	}
+	return rows, total, nil
+}
+
+// UpdateFields 按字段覆盖更新
+func (r *AdminRepo) UpdateFields(ctx context.Context, id uint64, fields map[string]interface{}) error {
+	return r.db.WithContext(ctx).Model(&model.Admin{}).Where("id = ?", id).Updates(fields).Error
+}
+
+// Delete 物理删除管理员
+func (r *AdminRepo) Delete(ctx context.Context, id uint64) error {
+	return r.db.WithContext(ctx).Delete(&model.Admin{}, id).Error
+}
+
 type TenantPlanLogRepo struct{ db *gorm.DB }
 
 func NewTenantPlanLogRepo(db *gorm.DB) *TenantPlanLogRepo { return &TenantPlanLogRepo{db: db} }

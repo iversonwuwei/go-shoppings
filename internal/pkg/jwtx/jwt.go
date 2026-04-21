@@ -18,6 +18,7 @@ type Claims struct {
 	Subject  Subject `json:"sub"`
 	UserID   uint64  `json:"uid"`
 	TenantID uint64  `json:"tid"`
+	Role     string  `json:"role,omitempty"`
 	OpenID   string  `json:"oid,omitempty"`
 	jwt.RegisteredClaims
 }
@@ -37,10 +38,15 @@ func New(secret string, expireHours, refreshHours int) *Manager {
 }
 
 func (m *Manager) Issue(sub Subject, userID, tenantID uint64, openID string) (string, error) {
+	return m.IssueWithRole(sub, userID, tenantID, "", openID)
+}
+
+func (m *Manager) IssueWithRole(sub Subject, userID, tenantID uint64, role, openID string) (string, error) {
 	claims := Claims{
 		Subject:  sub,
 		UserID:   userID,
 		TenantID: tenantID,
+		Role:     role,
 		OpenID:   openID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(m.expire)),

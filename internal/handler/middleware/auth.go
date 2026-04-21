@@ -37,6 +37,7 @@ func AdminAuth(j *jwtx.Manager) gin.HandlerFunc {
 		info := &ctxkeys.AdminInfo{
 			ID:       claims.UserID,
 			TenantID: claims.TenantID,
+			Role:     claims.Role,
 		}
 		ctx := ctxkeys.WithAdmin(c.Request.Context(), info)
 		c.Request = c.Request.WithContext(ctx)

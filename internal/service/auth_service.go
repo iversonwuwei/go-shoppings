@@ -46,7 +46,7 @@ func (s *AuthService) AdminLogin(ctx context.Context, username, password, ip str
 	if !utils.CheckPassword(a.Password, password) {
 		return nil, apperr.New(10011, "账号或密码错误")
 	}
-	tok, err := s.jwt.Issue(jwtx.SubjectAdmin, a.ID, a.TenantID, "")
+	tok, err := s.jwt.IssueWithRole(jwtx.SubjectAdmin, a.ID, a.TenantID, a.Role, "")
 	if err != nil {
 		return nil, err
 	}
@@ -193,7 +193,7 @@ func (s *AuthService) AdminLoginBySMS(ctx context.Context, tenantID uint64, phon
 	if a == nil || a.Status != 1 {
 		return nil, apperr.New(10010, "手机号未绑定管理员账号或账号被禁用")
 	}
-	tok, err := s.jwt.Issue(jwtx.SubjectAdmin, a.ID, a.TenantID, "")
+	tok, err := s.jwt.IssueWithRole(jwtx.SubjectAdmin, a.ID, a.TenantID, a.Role, "")
 	if err != nil {
 		return nil, err
 	}
