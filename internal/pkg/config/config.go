@@ -12,6 +12,7 @@ type Config struct {
 	Redis     RedisConfig     `mapstructure:"redis"`
 	JWT       JWTConfig       `mapstructure:"jwt"`
 	WeChat    WeChatConfig    `mapstructure:"wechat"`
+	WxPay     WxPayConfig     `mapstructure:"wxpay"`
 	Storage   StorageConfig   `mapstructure:"storage"`
 	Logging   LoggingConfig   `mapstructure:"logging"`
 	RateLimit RateLimitConfig `mapstructure:"rate_limit"`
@@ -58,6 +59,15 @@ type WeChatConfig struct {
 	AppSecret      string `mapstructure:"app_secret"`
 	Token          string `mapstructure:"token"`
 	EncodingAESKey string `mapstructure:"encoding_aes_key"`
+}
+
+// WxPayConfig 平台统一微信支付商户（用于 SaaS 租户订阅付费）
+type WxPayConfig struct {
+	AppID      string `mapstructure:"app_id"`
+	MchID      string `mapstructure:"mch_id"`
+	APIv3Key   string `mapstructure:"apiv3_key"`
+	CertSerial string `mapstructure:"cert_serial"`
+	NotifyURL  string `mapstructure:"notify_url"`
 }
 
 type StorageConfig struct {

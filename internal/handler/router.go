@@ -42,6 +42,7 @@ type Deps struct {
 	AdminDistributionH *admin.DistributionHandler
 	AdminDeliveryH     *admin.DeliveryHandler
 	AdminSiteH         *admin.SiteConfigHandler
+	AdminSubH          *admin.SubscriptionHandler
 	PlatformSettingsH  *admin.PlatformSettingsHandler
 
 	PlatformSmsH        *admin.PlatformSmsHandler
@@ -176,6 +177,8 @@ func New(d *Deps) *gin.Engine {
 		})
 		// 入驻申请：手机号验证码
 		pub.POST("/verify-code/send", d.AdminAuthH.SendCode)
+		// 微信支付回调（租户订阅付费，平台统一商户号）
+		pub.POST("/subscription/callback", d.AdminSubH.WxpayCallback)
 	}
 
 	// 租户注册（兼容老地址）
@@ -295,6 +298,10 @@ func New(d *Deps) *gin.Engine {
 		adAuth.PUT("/site/deployment",
 			middleware.RequireFeature(service.FeaturePrivateDeployment),
 			d.AdminSiteH.UpdateDeployment)
+
+		// 订阅付费（租户向平台统一商户号付款 / 查询订单）
+		adAuth.POST("/subscription/orders", d.AdminSubH.Create)
+		adAuth.GET("/subscription/orders", d.AdminSubH.List)
 	}
 
 	// 小程序（会员端）

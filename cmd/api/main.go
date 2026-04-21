@@ -20,6 +20,7 @@ import (
 	"wechat-mall-saas/internal/pkg/database"
 	"wechat-mall-saas/internal/pkg/jwtx"
 	"wechat-mall-saas/internal/pkg/logger"
+	"wechat-mall-saas/internal/pkg/wxpay"
 	"wechat-mall-saas/internal/repository"
 	"wechat-mall-saas/internal/service"
 )
@@ -82,6 +83,7 @@ func main() {
 	apiTokenRepo := repository.NewApiTokenRepo(db)
 	deliveryRepo := repository.NewDeliveryRepo(db)
 	siteRepo := repository.NewSiteConfigRepo(db)
+	subOrderRepo := repository.NewTenantSubscriptionOrderRepo(db)
 
 	// ========== 装配 Service ==========
 	tenantSvc := service.NewTenantService(tenantRepo, adminRepo, planRepo, tenantPlanLogRepo, rdb)
@@ -93,6 +95,14 @@ func main() {
 	couponSvc := service.NewCouponService(couponRepo, memberCouponRepo, tenantSvc)
 	memberSvc := service.NewMemberService(memberRepo, memberAddressRepo, pointsLogRepo)
 	settingsSvc := service.NewSettingsService(paymentConfigRepo, carrierRepo, tenantSvc)
+	platformWxpay := wxpay.NewClient(wxpay.Config{
+		AppID:      cfg.WxPay.AppID,
+		MchID:      cfg.WxPay.MchID,
+		APIv3Key:   cfg.WxPay.APIv3Key,
+		CertSerial: cfg.WxPay.CertSerial,
+		NotifyURL:  cfg.WxPay.NotifyURL,
+	})
+	subscriptionSvc := service.NewSubscriptionService(subOrderRepo, tenantRepo, planRepo, tenantPlanLogRepo, tenantSvc, platformWxpay)
 
 	// ========== 装配 Handler ==========
 	deps := &handler.Deps{
@@ -122,6 +132,7 @@ func main() {
 		AdminDistributionH: admin.NewDistributionHandler(distributionRepo),
 		AdminDeliveryH:     admin.NewDeliveryHandler(deliveryRepo),
 		AdminSiteH:         admin.NewSiteConfigHandler(siteRepo),
+		AdminSubH:          admin.NewSubscriptionHandler(subscriptionSvc),
 		PlatformSettingsH:  admin.NewPlatformSettingsHandler(settingsSvc),
 
 		PlatformSmsH:        admin.NewPlatformSmsHandler(smsRepo),

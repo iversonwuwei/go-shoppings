@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -45,6 +46,18 @@ func (r *TenantRepo) Update(ctx context.Context, t *model.Tenant) error {
 
 func (r *TenantRepo) UpdateFields(ctx context.Context, id uint64, fields map[string]interface{}) error {
 	return r.db.WithContext(ctx).Model(&model.Tenant{}).Where("id = ?", id).Updates(fields).Error
+}
+
+// ScanExpired 扫描需要进入欠费/封禁状态的租户。
+// - 状态=Active 且 plan_expire_at < now-overdueAfter => 返回（进入 Overdue）
+// - 状态=Overdue 且 plan_expire_at < now-bannedAfter => 返回（进入 Banned）
+// 调用方根据 target 状态分开批处理。
+func (r *TenantRepo) ScanByExpireCutoff(ctx context.Context, status int8, cutoff time.Time) ([]model.Tenant, error) {
+	var rows []model.Tenant
+	err := r.db.WithContext(ctx).
+		Where("status = ? AND plan_expire_at < ?", status, cutoff).
+		Find(&rows).Error
+	return rows, err
 }
 
 func (r *TenantRepo) List(ctx context.Context, status *int8, keyword string, page, size int) ([]model.Tenant, int64, error) {

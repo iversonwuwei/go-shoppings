@@ -38,6 +38,14 @@ wechat:
   token: ""                 # 微信服务器验证 Token
   encoding_aes_key: ""       # 消息加密 AES Key
 
+# 平台统一微信支付商户（SaaS 订阅付费走此商户号；租户的商品订单仍走各自租户 mch）
+wxpay:
+  app_id: ""                 # 平台 AppID
+  mch_id: ""                 # 平台商户号
+  apiv3_key: ""              # APIv3 密钥
+  cert_serial: ""            # 证书序列号
+  notify_url: "http://localhost:8080/api/v1/public/subscription/callback"
+
 storage:
   type: "local"              # local / oss / cos
   local:

@@ -178,8 +178,9 @@ func (s *TenantService) Register(ctx context.Context, in *model.Tenant) (*model.
 			in.PlanID = dp.ID
 		}
 	}
+	// 申请时给 7 天试用期；真正的试用期起点在平台审核通过时会被重置。
 	if in.PlanExpireAt.IsZero() {
-		in.PlanExpireAt = time.Now().AddDate(0, 0, 30)
+		in.PlanExpireAt = time.Now().AddDate(0, 0, 7)
 	}
 	// 计费周期：仅允许 monthly / yearly，默认 yearly
 	if in.BillingCycle != "monthly" && in.BillingCycle != "yearly" {
@@ -197,6 +198,8 @@ func (s *TenantService) Audit(ctx context.Context, id uint64, approve bool, reas
 	fields := map[string]interface{}{}
 	if approve {
 		fields["status"] = TenantStatusActive
+		// 审核通过时重置 7 天试用期的起点
+		fields["plan_expire_at"] = time.Now().AddDate(0, 0, 7)
 	} else {
 		fields["status"] = TenantStatusBanned
 		fields["reject_reason"] = reason
