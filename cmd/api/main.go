@@ -20,6 +20,7 @@ import (
 	"wechat-mall-saas/internal/pkg/database"
 	"wechat-mall-saas/internal/pkg/jwtx"
 	"wechat-mall-saas/internal/pkg/logger"
+	"wechat-mall-saas/internal/pkg/storage"
 	"wechat-mall-saas/internal/pkg/wxpay"
 	"wechat-mall-saas/internal/repository"
 	"wechat-mall-saas/internal/service"
@@ -87,6 +88,13 @@ func main() {
 	platformSettingsRepo := repository.NewPlatformSettingsRepo(db)
 	uploadRepo := repository.NewUploadRepo(db)
 
+	// 对象存储（local / minio）
+	objectStore, err := storage.New(cfg.Storage)
+	if err != nil {
+		logger.L.Fatal("init storage failed", zap.Error(err))
+	}
+	logger.L.Info("storage initialized", zap.String("type", objectStore.Type()))
+
 	// ========== 装配 Service ==========
 	tenantSvc := service.NewTenantService(tenantRepo, adminRepo, planRepo, tenantPlanLogRepo, rdb)
 	authSvc := service.NewAuthService(adminRepo, memberRepo, tenantRepo, jwtMgr, rdb, cfg.App.Env)
@@ -138,8 +146,8 @@ func main() {
 		PlatformSettingsH:  admin.NewPlatformSettingsHandler(settingsSvc),
 		PlatformGlobalH:    admin.NewPlatformGlobalSettingsHandler(platformSettingsRepo),
 		PlatformUsersH:     admin.NewPlatformUserHandler(adminRepo),
-		UploadH:            admin.NewUploadHandler(uploadRepo, cfg.Storage),
-		StorageBasePath:    cfg.Storage.Local.Path,
+		UploadH:            admin.NewUploadHandler(uploadRepo, objectStore),
+		StorageBasePath:    localStaticPath(objectStore, cfg.Storage),
 
 		PlatformSmsH:        admin.NewPlatformSmsHandler(smsRepo),
 		PlatformApiAccessH:  admin.NewPlatformApiAccessHandler(apiTokenRepo),
@@ -193,4 +201,12 @@ func main() {
 	}
 	_ = rdb.Close()
 	logger.L.Info("bye")
+}
+
+// localStaticPath 仅本地存储时返回根目录，用于 gin.Static("/uploads", ...)
+func localStaticPath(s storage.Storage, sc config.StorageConfig) string {
+	if s.Type() == "local" {
+		return sc.Local.Path
+	}
+	return ""
 }

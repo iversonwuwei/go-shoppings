@@ -2,9 +2,7 @@ package admin
 
 import (
 	"fmt"
-	"io"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -13,23 +11,22 @@ import (
 	"github.com/google/uuid"
 
 	"wechat-mall-saas/internal/model"
-	"wechat-mall-saas/internal/pkg/config"
 	"wechat-mall-saas/internal/pkg/ctxkeys"
 	"wechat-mall-saas/internal/pkg/response"
+	"wechat-mall-saas/internal/pkg/storage"
 	"wechat-mall-saas/internal/repository"
 )
 
-// UploadHandler 通用文件上传（当前仅本地存储 + 图片）
+// UploadHandler 通用文件上传
 type UploadHandler struct {
 	repo    *repository.UploadRepo
-	storage config.StorageConfig
+	storage storage.Storage
 }
 
-func NewUploadHandler(repo *repository.UploadRepo, storage config.StorageConfig) *UploadHandler {
-	return &UploadHandler{repo: repo, storage: storage}
+func NewUploadHandler(repo *repository.UploadRepo, s storage.Storage) *UploadHandler {
+	return &UploadHandler{repo: repo, storage: s}
 }
 
-// 允许的图片 MIME / 扩展名
 var allowedImageExt = map[string]string{
 	".jpg":  "image/jpeg",
 	".jpeg": "image/jpeg",
@@ -43,10 +40,10 @@ var allowedImageExt = map[string]string{
 // Image 上传单张图片
 //
 //	表单字段: file
-//	可选 query: folder=products|logo|avatar|banner （仅用于路径分类）
-//	返回: { url, file_key, size, ext }
+//	可选 query: folder=products|logo|avatar|banner
+//	返回: { url, file_key, size, ext, name }
 func (h *UploadHandler) Image(c *gin.Context) {
-	const maxSize = 10 << 20 // 10MB
+	const maxSize int64 = 10 << 20 // 10MB
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxSize)
 
 	fh, err := c.FormFile("file")
@@ -65,83 +62,65 @@ func (h *UploadHandler) Image(c *gin.Context) {
 		return
 	}
 
-	// 租户隔离路径；平台(tenant_id=0)统一放 platform/
-	var tenantID uint64
+	var tenantID, uploader uint64
 	if a := ctxkeys.GetAdmin(c.Request.Context()); a != nil {
 		tenantID = a.TenantID
+		uploader = a.ID
 	}
-	folder := c.DefaultQuery("folder", "common")
-	safeFolder := sanitizeSegment(folder)
-
 	tenantSeg := "platform"
 	if tenantID > 0 {
 		tenantSeg = fmt.Sprintf("tenant-%d", tenantID)
 	}
 	dateSeg := time.Now().Format("200601")
 	fileName := uuid.NewString() + ext
-	relDir := filepath.ToSlash(filepath.Join(tenantSeg, safeFolder, dateSeg))
-	relPath := filepath.ToSlash(filepath.Join(relDir, fileName))
-	absDir := filepath.Join(h.storage.Local.Path, relDir)
-	absPath := filepath.Join(h.storage.Local.Path, relPath)
+	safeFolder := sanitizeSegment(c.DefaultQuery("folder", "common"))
+	key := strings.Join([]string{tenantSeg, safeFolder, dateSeg, fileName}, "/")
 
-	if err := os.MkdirAll(absDir, 0o755); err != nil {
-		response.Fail(c, err)
-		return
-	}
 	src, err := fh.Open()
 	if err != nil {
 		response.Fail(c, err)
 		return
 	}
 	defer src.Close()
-	dst, err := os.Create(absPath)
+
+	url, err := h.storage.Put(c.Request.Context(), key, src, storage.ObjectMeta{
+		ContentType: mime,
+		Size:        fh.Size,
+	})
 	if err != nil {
-		response.Fail(c, err)
-		return
-	}
-	written, err := io.Copy(dst, src)
-	_ = dst.Close()
-	if err != nil {
-		_ = os.Remove(absPath)
 		response.Fail(c, err)
 		return
 	}
 
-	url := strings.TrimRight(h.storage.Local.BaseURL, "/") + "/" + relPath
-	var uploader uint64
-	if a := ctxkeys.GetAdmin(c.Request.Context()); a != nil {
-		uploader = a.ID
-	}
 	rec := &model.Upload{
 		TenantID:     tenantID,
-		FileKey:      relPath,
+		FileKey:      key,
 		OriginalName: fh.Filename,
-		FileSize:     written,
+		FileSize:     fh.Size,
 		FileType:     mime,
 		FileExt:      strings.TrimPrefix(ext, "."),
-		StorageType:  "local",
+		StorageType:  h.storage.Type(),
 		StorageURL:   url,
 		UploadedBy:   uploader,
 	}
-	_ = h.repo.Create(c.Request.Context(), rec) // 记录失败不影响上传成功
+	_ = h.repo.Create(c.Request.Context(), rec)
 
 	response.OK(c, gin.H{
 		"url":      url,
-		"file_key": relPath,
-		"size":     written,
+		"file_key": key,
+		"size":     fh.Size,
 		"ext":      strings.TrimPrefix(ext, "."),
 		"name":     fh.Filename,
 	})
 }
 
-// 防止 folder 参数中出现路径遍历
+// sanitizeSegment 防止 folder 参数中出现路径遍历
 func sanitizeSegment(s string) string {
 	s = strings.ReplaceAll(s, "..", "")
 	s = strings.Trim(s, "/\\")
 	if s == "" {
 		return "common"
 	}
-	// 只保留字母数字-_
 	var b strings.Builder
 	for _, r := range s {
 		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {

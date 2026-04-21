@@ -71,11 +71,21 @@ type WxPayConfig struct {
 }
 
 type StorageConfig struct {
-	Type  string `mapstructure:"type"`
+	Type  string `mapstructure:"type"` // local / minio
 	Local struct {
 		Path    string `mapstructure:"path"`
 		BaseURL string `mapstructure:"base_url"`
 	} `mapstructure:"local"`
+	Minio struct {
+		Endpoint   string `mapstructure:"endpoint"`    // 如 127.0.0.1:9000
+		AccessKey  string `mapstructure:"access_key"`
+		SecretKey  string `mapstructure:"secret_key"`
+		Bucket     string `mapstructure:"bucket"`
+		UseSSL     bool   `mapstructure:"use_ssl"`
+		Region     string `mapstructure:"region"`
+		BaseURL    string `mapstructure:"base_url"`    // 对外访问前缀，可为 CDN 或反代域名
+		PublicRead bool   `mapstructure:"public_read"` // true: 返回直链；false: 返回预签名 URL
+	} `mapstructure:"minio"`
 }
 
 type LoggingConfig struct {

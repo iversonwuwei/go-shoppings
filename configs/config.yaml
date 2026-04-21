@@ -47,22 +47,19 @@ wxpay:
   notify_url: "http://localhost:8080/api/v1/public/subscription/callback"
 
 storage:
-  type: "local"              # local / oss / cos
+  type: "local"              # local / minio
   local:
     path: "./uploads"
     base_url: "http://localhost:8080/uploads"
-  oss:
-    endpoint: ""
-    access_key: ""
-    secret_key: ""
-    bucket: ""
-    base_url: ""
-  cos:
-    region: ""
-    secret_id: ""
-    secret_key: ""
-    bucket: ""
-    base_url: ""
+  minio:
+    endpoint: "127.0.0.1:9000"
+    access_key: "minioadmin"
+    secret_key: "minioadmin"
+    bucket: "wxmall"
+    use_ssl: false
+    region: "us-east-1"
+    base_url: ""             # 留空则走 endpoint；填写 CDN/反代域名则返回该前缀
+    public_read: true        # true=bucket 公开读，返回直链；false=返回 7 天预签名 URL
 
 logging:
   level: "debug"             # debug / info / warn / error
