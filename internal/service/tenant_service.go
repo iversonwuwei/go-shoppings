@@ -181,6 +181,10 @@ func (s *TenantService) Register(ctx context.Context, in *model.Tenant) (*model.
 	if in.PlanExpireAt.IsZero() {
 		in.PlanExpireAt = time.Now().AddDate(0, 0, 30)
 	}
+	// 计费周期：仅允许 monthly / yearly，默认 yearly
+	if in.BillingCycle != "monthly" && in.BillingCycle != "yearly" {
+		in.BillingCycle = "yearly"
+	}
 	in.Status = TenantStatusPending
 	if err := s.tenants.Create(ctx, in); err != nil {
 		return nil, err

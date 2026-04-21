@@ -41,6 +41,7 @@ type Tenant struct {
 	WechatCertSerial string    `gorm:"size:100" json:"wechat_cert_serial,omitempty"`
 	PlanID           uint64    `gorm:"not null" json:"plan_id"`
 	PlanExpireAt     time.Time `gorm:"not null" json:"plan_expire_at"`
+	BillingCycle     string    `gorm:"size:10;not null;default:'yearly'" json:"billing_cycle"` // monthly / yearly
 	BrandName        string    `gorm:"size:50" json:"brand_name"`
 	BrandLogo        string    `gorm:"size:255" json:"brand_logo"`
 	BrandTheme       string    `gorm:"size:20;default:'#1989fa'" json:"brand_theme"`
