@@ -44,6 +44,7 @@ type Deps struct {
 	AdminSiteH         *admin.SiteConfigHandler
 	AdminSubH          *admin.SubscriptionHandler
 	PlatformSettingsH  *admin.PlatformSettingsHandler
+	PlatformGlobalH    *admin.PlatformGlobalSettingsHandler
 
 	PlatformSmsH        *admin.PlatformSmsHandler
 	PlatformApiAccessH  *admin.PlatformApiAccessHandler
@@ -106,6 +107,10 @@ func New(d *Deps) *gin.Engine {
 		sec.PUT("/carriers/:id", d.PlatformSettingsH.UpdateCarrier)
 		sec.PATCH("/carriers/:id/enabled", d.PlatformSettingsH.ToggleCarrier)
 		sec.DELETE("/carriers/:id", d.PlatformSettingsH.DeleteCarrier)
+
+		// 平台全局设置（平台名 / Logo / 平台微信支付商户号 / 客服联系方式）
+		sec.GET("/settings", d.PlatformGlobalH.Get)
+		sec.PUT("/settings", d.PlatformGlobalH.Update)
 
 		// 平台统一管理 短信通知（网关/模板/日志）
 		sec.GET("/sms/settings", d.PlatformSmsH.GetSettings)

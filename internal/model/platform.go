@@ -105,6 +105,23 @@ type TenantSubscriptionOrder struct {
 
 func (TenantSubscriptionOrder) TableName() string { return "tenant_subscription_orders" }
 
+// PlatformSettings 平台全局设置（单行，id 固定为 1）
+type PlatformSettings struct {
+	ID              uint64    `gorm:"primaryKey" json:"id"`
+	PlatformName    string    `json:"platform_name"`
+	PlatformLogo    string    `json:"platform_logo"`
+	SupportPhone    string    `json:"support_phone"`
+	SupportEmail    string    `json:"support_email"`
+	WxpayAppID      string    `gorm:"column:wxpay_app_id" json:"wxpay_app_id"`
+	WxpayMchID      string    `gorm:"column:wxpay_mch_id" json:"wxpay_mch_id"`
+	WxpayAPIv3Key   string    `gorm:"column:wxpay_apiv3_key" json:"wxpay_apiv3_key"`
+	WxpayCertSerial string    `gorm:"column:wxpay_cert_serial" json:"wxpay_cert_serial"`
+	WxpayNotifyURL  string    `gorm:"column:wxpay_notify_url" json:"wxpay_notify_url"`
+	UpdatedAt       time.Time `json:"updated_at"`
+}
+
+func (PlatformSettings) TableName() string { return "platform_settings" }
+
 // PlanFeature 平台统一维护的套餐功能目录（plans.features 存储的是 code 列表）
 type PlanFeature struct {
 	ID          uint64    `gorm:"primaryKey;autoIncrement" json:"id"`

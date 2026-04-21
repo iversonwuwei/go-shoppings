@@ -51,10 +51,11 @@ func main() {
 	planRepo := repository.NewPlanRepo(db)
 	tenantPlanLogRepo := repository.NewTenantPlanLogRepo(db)
 	subOrderRepo := repository.NewTenantSubscriptionOrderRepo(db)
+	platformSettingsRepo := repository.NewPlatformSettingsRepo(db)
 
 	tenantSvc := service.NewTenantService(tenantRepo, adminRepo, planRepo, tenantPlanLogRepo, rdb)
 	wp := wxpay.NewClient(wxpay.Config{AppID: cfg.WxPay.AppID, MchID: cfg.WxPay.MchID})
-	subSvc := service.NewSubscriptionService(subOrderRepo, tenantRepo, planRepo, tenantPlanLogRepo, tenantSvc, wp)
+	subSvc := service.NewSubscriptionService(subOrderRepo, tenantRepo, planRepo, tenantPlanLogRepo, tenantSvc, wp, platformSettingsRepo)
 
 	runOnce := func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

@@ -22,12 +22,13 @@ const (
 
 // SubscriptionService 管理租户订阅订单 / 支付 / 到期联动
 type SubscriptionService struct {
-	orders   *repository.TenantSubscriptionOrderRepo
-	tenants  *repository.TenantRepo
-	plans    *repository.PlanRepo
-	planLogs *repository.TenantPlanLogRepo
-	tenant   *TenantService
-	wxpay    *wxpay.Client
+	orders       *repository.TenantSubscriptionOrderRepo
+	tenants      *repository.TenantRepo
+	plans        *repository.PlanRepo
+	planLogs     *repository.TenantPlanLogRepo
+	tenant       *TenantService
+	wxpay        *wxpay.Client
+	platSettings *repository.PlatformSettingsRepo
 }
 
 func NewSubscriptionService(
@@ -37,11 +38,31 @@ func NewSubscriptionService(
 	planLogs *repository.TenantPlanLogRepo,
 	tenant *TenantService,
 	wp *wxpay.Client,
+	platSettings *repository.PlatformSettingsRepo,
 ) *SubscriptionService {
 	return &SubscriptionService{
 		orders: orders, tenants: tenants, plans: plans,
 		planLogs: planLogs, tenant: tenant, wxpay: wp,
+		platSettings: platSettings,
 	}
+}
+
+// resolveWxpayClient 运行时解析：优先使用平台设置里的配置，未填写则回退到启动时注入的 s.wxpay
+func (s *SubscriptionService) resolveWxpayClient(ctx context.Context) *wxpay.Client {
+	if s.platSettings == nil {
+		return s.wxpay
+	}
+	ps, err := s.platSettings.Get(ctx)
+	if err != nil || ps == nil || ps.WxpayAppID == "" || ps.WxpayMchID == "" {
+		return s.wxpay
+	}
+	return wxpay.NewClient(wxpay.Config{
+		AppID:      ps.WxpayAppID,
+		MchID:      ps.WxpayMchID,
+		APIv3Key:   ps.WxpayAPIv3Key,
+		CertSerial: ps.WxpayCertSerial,
+		NotifyURL:  ps.WxpayNotifyURL,
+	})
 }
 
 // IsInTrial 判断租户当前是否处于试用期（仅审核通过后计算）。
@@ -124,8 +145,9 @@ func (s *SubscriptionService) CreateOrder(ctx context.Context, tenantID, planID 
 	if s.wxpay == nil {
 		return order, nil, apperr.New(40002, "平台未配置微信支付")
 	}
+	client := s.resolveWxpayClient(ctx)
 	totalFen := amount.Mul(decimal.NewFromInt(100)).IntPart()
-	pay, err := s.wxpay.PlaceJSAPIOrder(ctx, wxpay.JSAPIOrderReq{
+	pay, err := client.PlaceJSAPIOrder(ctx, wxpay.JSAPIOrderReq{
 		Description: fmt.Sprintf("%s 订阅-%s", p.Name, billingCycleLabel(billingCycle)),
 		OutTradeNo:  orderNo,
 		TotalFen:    totalFen,

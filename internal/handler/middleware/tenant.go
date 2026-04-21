@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -36,13 +37,21 @@ func Tenant(svc *service.TenantService, required bool) gin.HandlerFunc {
 			c.Abort()
 			return
 		}
-		// 封禁 / 待审核 => 拒绝
-		if info.Status == service.TenantStatusBanned || info.Status == service.TenantStatusPending {
+		// 待审核 => 拒绝（尚未通过平台审批）
+		if info.Status == service.TenantStatusPending {
 			response.Fail(c, apperr.ErrTenantInvalid)
 			c.Abort()
 			return
 		}
-		// 过期 + 非欠费：继续；但写操作会在 service 层 RequireFeature/CheckLimit 处拒绝
+		// 已封禁 => 仅允许访问订阅付费相关路由，便于自助续订解封
+		if info.Status == service.TenantStatusBanned {
+			if !strings.Contains(c.Request.URL.Path, "/admin/subscription/") {
+				response.FailCode(c, 30021, "租户已封禁，请先完成续订付费")
+				c.Abort()
+				return
+			}
+		}
+		// Overdue（3~5 天欠费宽限期）：放行读取，写操作由 RequireFeature 拦截
 		ctx := ctxkeys.WithTenant(c.Request.Context(), info)
 		c.Request = c.Request.WithContext(ctx)
 		c.Next()

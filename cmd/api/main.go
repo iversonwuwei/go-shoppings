@@ -84,6 +84,7 @@ func main() {
 	deliveryRepo := repository.NewDeliveryRepo(db)
 	siteRepo := repository.NewSiteConfigRepo(db)
 	subOrderRepo := repository.NewTenantSubscriptionOrderRepo(db)
+	platformSettingsRepo := repository.NewPlatformSettingsRepo(db)
 
 	// ========== 装配 Service ==========
 	tenantSvc := service.NewTenantService(tenantRepo, adminRepo, planRepo, tenantPlanLogRepo, rdb)
@@ -102,7 +103,7 @@ func main() {
 		CertSerial: cfg.WxPay.CertSerial,
 		NotifyURL:  cfg.WxPay.NotifyURL,
 	})
-	subscriptionSvc := service.NewSubscriptionService(subOrderRepo, tenantRepo, planRepo, tenantPlanLogRepo, tenantSvc, platformWxpay)
+	subscriptionSvc := service.NewSubscriptionService(subOrderRepo, tenantRepo, planRepo, tenantPlanLogRepo, tenantSvc, platformWxpay, platformSettingsRepo)
 
 	// ========== 装配 Handler ==========
 	deps := &handler.Deps{
@@ -134,6 +135,7 @@ func main() {
 		AdminSiteH:         admin.NewSiteConfigHandler(siteRepo),
 		AdminSubH:          admin.NewSubscriptionHandler(subscriptionSvc),
 		PlatformSettingsH:  admin.NewPlatformSettingsHandler(settingsSvc),
+		PlatformGlobalH:    admin.NewPlatformGlobalSettingsHandler(platformSettingsRepo),
 
 		PlatformSmsH:        admin.NewPlatformSmsHandler(smsRepo),
 		PlatformApiAccessH:  admin.NewPlatformApiAccessHandler(apiTokenRepo),
