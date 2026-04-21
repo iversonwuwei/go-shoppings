@@ -48,6 +48,7 @@ type Tenant struct {
 	BrandDomain      string    `gorm:"size:100" json:"brand_domain"`
 	Status           int8      `gorm:"not null;default:0" json:"status"` // 0待审核 1正常 2欠费 3封禁
 	RejectReason     string    `gorm:"size:255" json:"reject_reason,omitempty"`
+	ExtraFeatures    JSONB     `gorm:"type:jsonb;not null;default:'[]'" json:"extra_features"` // 平台单独授予的功能（与 plan.Features 取并集）
 	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at"`
 }

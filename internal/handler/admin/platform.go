@@ -2,6 +2,7 @@ package admin
 
 import (
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -59,6 +60,64 @@ func (h *PlatformHandler) AuditTenant(c *gin.Context) {
 		return
 	}
 	if err := h.tenant.Audit(c.Request.Context(), id, body.Approve, body.Reason); err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, nil)
+}
+
+// ========== 租户运营管理：封禁 / 套餐 / 附加功能 ==========
+
+type updateTenantStatusReq struct {
+	Status int8   `json:"status"` // 1=正常 3=封禁
+	Reason string `json:"reason"`
+}
+
+func (h *PlatformHandler) UpdateTenantStatus(c *gin.Context) {
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+	var body updateTenantStatusReq
+	if err := c.ShouldBindJSON(&body); err != nil {
+		response.FailCode(c, 20001, err.Error())
+		return
+	}
+	if err := h.tenant.SetStatus(c.Request.Context(), id, body.Status, body.Reason); err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, nil)
+}
+
+type updateTenantPlanReq struct {
+	PlanID       uint64     `json:"plan_id"`
+	PlanExpireAt *time.Time `json:"plan_expire_at,omitempty"`
+}
+
+func (h *PlatformHandler) UpdateTenantPlan(c *gin.Context) {
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+	var body updateTenantPlanReq
+	if err := c.ShouldBindJSON(&body); err != nil {
+		response.FailCode(c, 20001, err.Error())
+		return
+	}
+	if err := h.tenant.SetPlan(c.Request.Context(), id, body.PlanID, body.PlanExpireAt); err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, nil)
+}
+
+type updateTenantFeaturesReq struct {
+	ExtraFeatures []string `json:"extra_features"`
+}
+
+func (h *PlatformHandler) UpdateTenantFeatures(c *gin.Context) {
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+	var body updateTenantFeaturesReq
+	if err := c.ShouldBindJSON(&body); err != nil {
+		response.FailCode(c, 20001, err.Error())
+		return
+	}
+	if err := h.tenant.SetExtraFeatures(c.Request.Context(), id, body.ExtraFeatures); err != nil {
 		response.Fail(c, err)
 		return
 	}

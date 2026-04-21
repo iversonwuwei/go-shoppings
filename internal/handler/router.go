@@ -165,6 +165,13 @@ func New(d *Deps) *gin.Engine {
 		catGrp.POST("", d.AdminCategoryH.Create)
 		catGrp.PUT("/:id", d.AdminCategoryH.Update)
 		catGrp.DELETE("/:id", d.AdminCategoryH.Delete)
+
+		// 平台运营 租户管理（仅 super/operator 可手动调整）
+		tenantMgr := sec.Group("/tenants")
+		tenantMgr.Use(middleware.RequireRole(admin.PlatformRoleSuper, admin.PlatformRoleOperator))
+		tenantMgr.PATCH("/:id/status", d.AdminPlatformH.UpdateTenantStatus)
+		tenantMgr.PATCH("/:id/plan", d.AdminPlatformH.UpdateTenantPlan)
+		tenantMgr.PATCH("/:id/features", d.AdminPlatformH.UpdateTenantFeatures)
 	}
 
 	// 公开端（产品介绍页 / 申请入驻）

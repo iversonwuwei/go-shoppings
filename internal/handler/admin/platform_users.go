@@ -14,10 +14,11 @@ import (
 )
 
 // 平台角色常量（也用于前端）
-//   super    —— 超级管理员（全部权限）
-//   operator —— 运营人员（日常运营：租户审核/套餐/域名等）
-//   finance  —— 财务（只读 + 财务相关审核）
-//   support  —— 客服（只读）
+//
+//	super    —— 超级管理员（全部权限）
+//	operator —— 运营人员（日常运营：租户审核/套餐/域名等）
+//	finance  —— 财务（只读 + 财务相关审核）
+//	support  —— 客服（只读）
 const (
 	PlatformRoleSuper    = "super"
 	PlatformRoleOperator = "operator"

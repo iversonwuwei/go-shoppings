@@ -76,6 +76,19 @@ func (s *TenantService) LoadContext(ctx context.Context, id uint64) (*ctxkeys.Te
 	if p != nil {
 		features = []string(p.Features)
 	}
+	// 并入平台单独授予的附加功能（extra_features），去重
+	if len(t.ExtraFeatures) > 0 {
+		seen := make(map[string]bool, len(features))
+		for _, f := range features {
+			seen[f] = true
+		}
+		for _, f := range t.ExtraFeatures {
+			if f != "" && !seen[f] {
+				features = append(features, f)
+				seen[f] = true
+			}
+		}
+	}
 	tc := &tenantCache{
 		ID: t.ID, Code: t.Code, PlanID: t.PlanID, Status: t.Status,
 		PlanExpireAt: t.PlanExpireAt, Features: features,
@@ -214,6 +227,85 @@ func (s *TenantService) Audit(ctx context.Context, id uint64, approve bool, reas
 			adminStatus = 1
 		}
 		_ = s.admins.UpdateStatusByTenant(ctx, id, adminStatus)
+	}
+	s.Invalidate(ctx, id)
+	return nil
+}
+
+// SetStatus 平台管理员手动封禁 / 恢复租户
+// status: 1=正常  3=封禁
+func (s *TenantService) SetStatus(ctx context.Context, id uint64, status int8, reason string) error {
+	t, err := s.tenants.FindByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if t == nil {
+		return apperr.ErrTenantInvalid
+	}
+	if status != TenantStatusActive && status != TenantStatusBanned {
+		return apperr.ErrParamInvalid
+	}
+	fields := map[string]interface{}{"status": status}
+	if status == TenantStatusBanned {
+		fields["reject_reason"] = reason
+	} else {
+		fields["reject_reason"] = ""
+	}
+	if err := s.tenants.UpdateFields(ctx, id, fields); err != nil {
+		return err
+	}
+	if s.admins != nil {
+		var adminStatus int8 = 1
+		if status == TenantStatusBanned {
+			adminStatus = 0
+		}
+		_ = s.admins.UpdateStatusByTenant(ctx, id, adminStatus)
+	}
+	s.Invalidate(ctx, id)
+	return nil
+}
+
+// SetPlan 平台管理员修改租户套餐 / 续期
+func (s *TenantService) SetPlan(ctx context.Context, id, planID uint64, expireAt *time.Time) error {
+	if planID == 0 {
+		return apperr.ErrParamInvalid
+	}
+	p, err := s.plans.FindByID(ctx, planID)
+	if err != nil {
+		return err
+	}
+	if p == nil {
+		return apperr.ErrParamInvalid
+	}
+	fields := map[string]interface{}{"plan_id": planID}
+	if expireAt != nil && !expireAt.IsZero() {
+		fields["plan_expire_at"] = *expireAt
+	}
+	if err := s.tenants.UpdateFields(ctx, id, fields); err != nil {
+		return err
+	}
+	s.Invalidate(ctx, id)
+	return nil
+}
+
+// SetExtraFeatures 平台管理员为租户单独授予 / 撤销附加功能（与套餐功能取并集）
+func (s *TenantService) SetExtraFeatures(ctx context.Context, id uint64, codes []string) error {
+	// 去重
+	seen := map[string]bool{}
+	out := make([]string, 0, len(codes))
+	for _, c := range codes {
+		if c == "" || seen[c] {
+			continue
+		}
+		seen[c] = true
+		out = append(out, c)
+	}
+	bs, err := json.Marshal(out)
+	if err != nil {
+		return err
+	}
+	if err := s.tenants.UpdateFields(ctx, id, map[string]interface{}{"extra_features": bs}); err != nil {
+		return err
 	}
 	s.Invalidate(ctx, id)
 	return nil

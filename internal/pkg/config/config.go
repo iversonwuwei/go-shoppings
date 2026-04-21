@@ -77,7 +77,7 @@ type StorageConfig struct {
 		BaseURL string `mapstructure:"base_url"`
 	} `mapstructure:"local"`
 	Minio struct {
-		Endpoint   string `mapstructure:"endpoint"`    // 如 127.0.0.1:9000
+		Endpoint   string `mapstructure:"endpoint"` // 如 127.0.0.1:9000
 		AccessKey  string `mapstructure:"access_key"`
 		SecretKey  string `mapstructure:"secret_key"`
 		Bucket     string `mapstructure:"bucket"`
