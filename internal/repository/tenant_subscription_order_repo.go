@@ -43,11 +43,11 @@ func (r *TenantSubscriptionOrderRepo) MarkPaid(ctx context.Context, orderNo, txn
 		Model(&model.TenantSubscriptionOrder{}).
 		Where("order_no = ? AND status = ?", orderNo, 0).
 		Updates(map[string]interface{}{
-			"status":              1,
-			"pay_transaction_id":  txnID,
-			"pay_at":              paidAt,
-			"expire_after":        expireAfter,
-			"updated_at":          time.Now(),
+			"status":             1,
+			"pay_transaction_id": txnID,
+			"pay_at":             paidAt,
+			"expire_after":       expireAfter,
+			"updated_at":         time.Now(),
 		}).Error
 }
 

@@ -15,9 +15,9 @@ import (
 
 // 宽限期（天）：逾期 N 天转欠费，M 天封禁
 const (
-	TrialDays          = 7
-	GraceOverdueDays   = 3
-	GraceBannedDays    = 5
+	TrialDays        = 7
+	GraceOverdueDays = 3
+	GraceBannedDays  = 5
 )
 
 // SubscriptionService 管理租户订阅订单 / 支付 / 到期联动
