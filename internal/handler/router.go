@@ -46,6 +46,8 @@ type Deps struct {
 	PlatformSettingsH  *admin.PlatformSettingsHandler
 	PlatformGlobalH    *admin.PlatformGlobalSettingsHandler
 	PlatformUsersH     *admin.PlatformUserHandler
+	UploadH            *admin.UploadHandler
+	StorageBasePath    string // 本地静态文件根目录
 
 	PlatformSmsH        *admin.PlatformSmsHandler
 	PlatformApiAccessH  *admin.PlatformApiAccessHandler
@@ -74,6 +76,11 @@ func New(d *Deps) *gin.Engine {
 	r.Use(middleware.Recovery(), middleware.CORS(), middleware.Logging(), middleware.IPRateLimit(d.RateQPS, d.RateBurst))
 
 	r.GET("/healthz", func(c *gin.Context) { response.OK(c, gin.H{"status": "ok"}) })
+
+	// 静态文件：本地上传图片
+	if d.StorageBasePath != "" {
+		r.Static("/uploads", d.StorageBasePath)
+	}
 
 	v1 := r.Group("/api/v1")
 
@@ -112,6 +119,9 @@ func New(d *Deps) *gin.Engine {
 		// 平台全局设置（平台名 / Logo / 平台微信支付商户号 / 客服联系方式）
 		sec.GET("/settings", d.PlatformGlobalH.Get)
 		sec.PUT("/settings", d.PlatformGlobalH.Update)
+
+		// 通用文件上传（平台，tenant_id=0）
+		sec.POST("/upload/image", d.UploadH.Image)
 
 		// 平台用户管理（仅超级管理员可管理，其他角色只能查看自己）
 		sec.GET("/me", d.PlatformUsersH.Me)
@@ -241,6 +251,9 @@ func New(d *Deps) *gin.Engine {
 		adAuth.PUT("/settings/payment", d.AdminSettingsH.SubmitPayment)
 		adAuth.GET("/settings/carriers", d.AdminSettingsH.ListCarriers)
 		adAuth.GET("/settings/carriers/track", d.AdminSettingsH.QueryTrack)
+
+		// 通用文件上传（租户）
+		adAuth.POST("/upload/image", d.UploadH.Image)
 
 		// 会员等级管理（需套餐包含 member_level 功能）
 		lvl := adAuth.Group("/member/levels", middleware.RequireFeature(service.FeatureMemberLevel))

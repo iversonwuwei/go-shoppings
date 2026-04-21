@@ -85,6 +85,7 @@ func main() {
 	siteRepo := repository.NewSiteConfigRepo(db)
 	subOrderRepo := repository.NewTenantSubscriptionOrderRepo(db)
 	platformSettingsRepo := repository.NewPlatformSettingsRepo(db)
+	uploadRepo := repository.NewUploadRepo(db)
 
 	// ========== 装配 Service ==========
 	tenantSvc := service.NewTenantService(tenantRepo, adminRepo, planRepo, tenantPlanLogRepo, rdb)
@@ -137,6 +138,8 @@ func main() {
 		PlatformSettingsH:  admin.NewPlatformSettingsHandler(settingsSvc),
 		PlatformGlobalH:    admin.NewPlatformGlobalSettingsHandler(platformSettingsRepo),
 		PlatformUsersH:     admin.NewPlatformUserHandler(adminRepo),
+		UploadH:            admin.NewUploadHandler(uploadRepo, cfg.Storage),
+		StorageBasePath:    cfg.Storage.Local.Path,
 
 		PlatformSmsH:        admin.NewPlatformSmsHandler(smsRepo),
 		PlatformApiAccessH:  admin.NewPlatformApiAccessHandler(apiTokenRepo),
