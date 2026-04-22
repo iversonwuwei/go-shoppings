@@ -238,11 +238,11 @@ func New(d *Deps) *gin.Engine {
 				return
 			}
 			response.OK(c, gin.H{
-				"id":          t.ID,
-				"code":        t.Code,
-				"status":      t.Status,
+				"id":           t.ID,
+				"code":         t.Code,
+				"status":       t.Status,
 				"company_name": t.CompanyName,
-				"brand_name":  t.BrandName,
+				"brand_name":   t.BrandName,
 			})
 		})
 		// 微信支付回调（租户订阅付费，平台统一商户号）
