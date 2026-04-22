@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"strings"
+
 	"github.com/gin-gonic/gin"
 
 	"wechat-mall-saas/internal/handler/admin"
@@ -27,6 +29,7 @@ type Deps struct {
 	Member   *service.MemberService
 
 	PlanFeatureRepo *repository.PlanFeatureRepo
+	TenantRepo      *repository.TenantRepo
 
 	AdminAuthH         *admin.AuthHandler
 	AdminProductH      *admin.ProductHandler
@@ -218,6 +221,30 @@ func New(d *Deps) *gin.Engine {
 		})
 		// 入驻申请：手机号验证码
 		pub.POST("/verify-code/send", d.AdminAuthH.SendCode)
+		// 按租户 code（子域名）解析租户摘要，供登录页使用（隐藏内部主键）
+		pub.GET("/tenant/resolve", func(c *gin.Context) {
+			code := strings.TrimSpace(c.Query("code"))
+			if code == "" {
+				response.FailCode(c, 20001, "code 不能为空")
+				return
+			}
+			t, err := d.TenantRepo.FindByCode(c.Request.Context(), code)
+			if err != nil {
+				response.Fail(c, err)
+				return
+			}
+			if t == nil {
+				response.FailCode(c, 40400, "租户不存在")
+				return
+			}
+			response.OK(c, gin.H{
+				"id":          t.ID,
+				"code":        t.Code,
+				"status":      t.Status,
+				"company_name": t.CompanyName,
+				"brand_name":  t.BrandName,
+			})
+		})
 		// 微信支付回调（租户订阅付费，平台统一商户号）
 		pub.POST("/subscription/callback", d.AdminSubH.WxpayCallback)
 	}

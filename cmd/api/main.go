@@ -127,6 +127,7 @@ func main() {
 		Member:   memberSvc,
 
 		PlanFeatureRepo: planFeatureRepo,
+		TenantRepo:      tenantRepo,
 
 		AdminAuthH:         admin.NewAuthHandler(authSvc),
 		AdminProductH:      admin.NewProductHandler(productSvc),
