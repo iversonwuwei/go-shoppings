@@ -20,6 +20,11 @@ const (
 	OrderStatusRefunded   = "refunded"
 )
 
+const (
+	OrderMessageStatusUnread = "unread"
+	OrderMessageStatusRead   = "read"
+)
+
 type Order struct {
 	ID                 uint64           `gorm:"primaryKey;autoIncrement" json:"id"`
 	TenantID           uint64           `gorm:"not null;index" json:"tenant_id"`
@@ -68,7 +73,7 @@ type OrderItem struct {
 	TenantID     uint64           `gorm:"not null;index" json:"tenant_id"`
 	OrderID      uint64           `gorm:"not null;index" json:"order_id"`
 	ProductID    uint64           `gorm:"not null" json:"product_id"`
-	SKUID        uint64           `json:"sku_id"`
+	SKUID        uint64           `gorm:"column:sku_id" json:"sku_id"`
 	ProductName  string           `gorm:"size:200;not null" json:"product_name"`
 	SKUDesc      string           `gorm:"size:200" json:"sku_desc"`
 	CoverImage   string           `gorm:"size:255;not null" json:"cover_image"`
@@ -96,3 +101,18 @@ type OrderLog struct {
 }
 
 func (OrderLog) TableName() string { return "order_logs" }
+
+type OrderMessage struct {
+	ID        uint64     `gorm:"primaryKey;autoIncrement" json:"id"`
+	TenantID  uint64     `gorm:"not null;index" json:"tenant_id"`
+	OrderID   uint64     `gorm:"not null;index" json:"order_id"`
+	OrderNo   string     `gorm:"size:32;not null;index" json:"order_no"`
+	EventType string     `gorm:"size:40;not null" json:"event_type"`
+	Title     string     `gorm:"size:120;not null" json:"title"`
+	Content   string     `gorm:"size:500;not null" json:"content"`
+	Status    string     `gorm:"size:20;not null;default:'unread';index" json:"status"`
+	ReadAt    *time.Time `json:"read_at,omitempty"`
+	CreatedAt time.Time  `json:"created_at"`
+}
+
+func (OrderMessage) TableName() string { return "order_messages" }

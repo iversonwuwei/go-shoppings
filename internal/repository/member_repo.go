@@ -35,6 +35,17 @@ func (r *MemberRepo) FindByID(ctx context.Context, id uint64) (*model.Member, er
 	return &m, nil
 }
 
+func (r *MemberRepo) FindByPhone(ctx context.Context, phone string) (*model.Member, error) {
+	var m model.Member
+	if err := TenantDB(ctx, r.db).Where("phone = ?", phone).First(&m).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &m, nil
+}
+
 func (r *MemberRepo) Create(ctx context.Context, m *model.Member) error {
 	m.TenantID = EnsureTenant(ctx)
 	return r.db.WithContext(ctx).Create(m).Error

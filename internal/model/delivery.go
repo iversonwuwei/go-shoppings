@@ -41,13 +41,30 @@ type TenantSiteConfig struct {
 
 	BrandName         string `gorm:"size:100;not null;default:''" json:"brand_name"`
 	BrandLogo         string `gorm:"size:500;not null;default:''" json:"brand_logo"`
-	PrimaryColor      string `gorm:"size:16;not null;default:'#409EFF'" json:"primary_color"`
+	PrimaryColor      string `gorm:"size:32;not null;default:'#409EFF'" json:"primary_color"`
 	HidePlatformBrand int8   `gorm:"not null;default:0" json:"hide_platform_brand"`
 	FooterText        string `gorm:"size:255;not null;default:''" json:"footer_text"`
 
 	DeploymentMode  string `gorm:"size:16;not null;default:'shared'" json:"deployment_mode"`
 	PrivateEndpoint string `gorm:"size:255;not null;default:''" json:"private_endpoint"`
 	PrivateNotes    string `gorm:"size:500;not null;default:''" json:"private_notes"`
+
+	StorefrontNotice            string `gorm:"size:255;not null;default:''" json:"-"`
+	StorefrontHeroTitle         string `gorm:"size:120;not null;default:''" json:"-"`
+	StorefrontHeroSubtitle      string `gorm:"size:500;not null;default:''" json:"-"`
+	StorefrontSearchPlaceholder string `gorm:"size:120;not null;default:''" json:"-"`
+	StorefrontCategoryTitle     string `gorm:"size:120;not null;default:''" json:"-"`
+	StorefrontCouponTitle       string `gorm:"size:120;not null;default:''" json:"-"`
+	StorefrontHotTitle          string `gorm:"size:120;not null;default:''" json:"-"`
+	StorefrontRecommendTitle    string `gorm:"size:120;not null;default:''" json:"-"`
+	StorefrontQuickEntries      string `gorm:"type:text;not null;default:'[]'" json:"-"`
+	StorefrontServiceCards      string `gorm:"type:text;not null;default:'[]'" json:"-"`
+	StorefrontBanners           string `gorm:"type:text;not null;default:'[]'" json:"-"`
+	StorefrontPromoCards        string `gorm:"type:text;not null;default:'[]'" json:"-"`
+	StorefrontMemberEntries     string `gorm:"type:text;not null;default:'[]'" json:"-"`
+	StorefrontHomeSections      string `gorm:"type:text;not null;default:'[]'" json:"-"`
+	StorefrontProfileSections   string `gorm:"type:text;not null;default:'[]'" json:"-"`
+	StorefrontSearchKeywords    string `gorm:"type:text;not null;default:'[]'" json:"-"`
 
 	UpdatedAt time.Time `json:"updated_at"`
 }

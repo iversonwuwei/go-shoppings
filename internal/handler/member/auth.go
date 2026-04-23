@@ -24,6 +24,25 @@ type wxLoginReq struct {
 	Code string `json:"code" binding:"required"`
 }
 
+type devLoginReq struct {
+	Phone    string `json:"phone" binding:"required"`
+	Nickname string `json:"nickname"`
+}
+
+func (h *AuthHandler) DevLogin(c *gin.Context) {
+	var req devLoginReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.FailCode(c, 20001, err.Error())
+		return
+	}
+	res, err := h.auth.MemberDevLogin(c.Request.Context(), req.Phone, req.Nickname)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, res)
+}
+
 func (h *AuthHandler) LoginByWechat(c *gin.Context) {
 	t := ctxkeys.GetTenant(c.Request.Context())
 	if t == nil {

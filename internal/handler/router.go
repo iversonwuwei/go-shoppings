@@ -56,6 +56,7 @@ type Deps struct {
 	PlatformApiAccessH  *admin.PlatformApiAccessHandler
 	PlatformDomainH     *admin.PlatformDomainHandler
 	PlatformDeploymentH *admin.PlatformDeploymentHandler
+	PlatformStorefrontH *admin.PlatformStorefrontHandler
 
 	MemberAuthH     *member.AuthHandler
 	MemberProductH  *member.ProductHandler
@@ -175,6 +176,8 @@ func New(d *Deps) *gin.Engine {
 		tenantMgr.PATCH("/:id/status", d.AdminPlatformH.UpdateTenantStatus)
 		tenantMgr.PATCH("/:id/plan", d.AdminPlatformH.UpdateTenantPlan)
 		tenantMgr.PATCH("/:id/features", d.AdminPlatformH.UpdateTenantFeatures)
+		tenantMgr.GET("/:id/storefront/quick-entries", d.PlatformStorefrontH.GetQuickEntries)
+		tenantMgr.PUT("/:id/storefront/quick-entries", d.PlatformStorefrontH.UpdateQuickEntries)
 	}
 
 	// 公开端（产品介绍页 / 申请入驻）
@@ -221,14 +224,23 @@ func New(d *Deps) *gin.Engine {
 		})
 		// 入驻申请：手机号验证码
 		pub.POST("/verify-code/send", d.AdminAuthH.SendCode)
-		// 按租户 code（子域名）解析租户摘要，供登录页使用（隐藏内部主键）
+		// 按租户 code 或已审核自定义域名解析租户摘要，供前台/登录页使用（隐藏内部主键）
 		pub.GET("/tenant/resolve", func(c *gin.Context) {
 			code := strings.TrimSpace(c.Query("code"))
-			if code == "" {
-				response.FailCode(c, 20001, "code 不能为空")
+			host := strings.TrimSpace(c.Query("host"))
+			if code == "" && host == "" {
+				response.FailCode(c, 20001, "code 或 host 不能为空")
 				return
 			}
-			t, err := d.TenantRepo.FindByCode(c.Request.Context(), code)
+			var (
+				t   *model.Tenant
+				err error
+			)
+			if host != "" {
+				t, err = d.TenantRepo.FindByCustomDomain(c.Request.Context(), host)
+			} else {
+				t, err = d.TenantRepo.FindByCode(c.Request.Context(), code)
+			}
 			if err != nil {
 				response.Fail(c, err)
 				return
@@ -274,6 +286,8 @@ func New(d *Deps) *gin.Engine {
 	adAuth.Use(middleware.Tenant(d.Tenant, true), middleware.AdminAuth(d.JWT))
 	{
 		adAuth.GET("/products", d.AdminProductH.List)
+		adAuth.GET("/products/import-template", d.AdminProductH.ImportTemplate)
+		adAuth.POST("/products/import", d.AdminProductH.Import)
 		adAuth.POST("/products", d.AdminProductH.Create)
 		adAuth.PUT("/products/:id", d.AdminProductH.Update)
 		adAuth.PATCH("/products/:id/status", d.AdminProductH.UpdateStatus)
@@ -281,11 +295,16 @@ func New(d *Deps) *gin.Engine {
 		adAuth.POST("/products/:id/skus", middleware.RequireFeature(service.FeatureMultiSKU), d.AdminProductH.CreateSKU)
 
 		adAuth.GET("/categories", d.AdminCategoryH.List)
+		adAuth.PUT("/categories/:id/media", d.AdminCategoryH.UpdateTenantAsset)
 		// 分类改由平台统一管理，租户端只读
 
 		adAuth.GET("/orders", d.AdminOrderH.List)
 		adAuth.GET("/orders/:id", d.AdminOrderH.Detail)
+		adAuth.GET("/orders/:id/logs", d.AdminOrderH.Logs)
 		adAuth.POST("/orders/:id/ship", d.AdminOrderH.Ship)
+		adAuth.GET("/order-messages", d.AdminOrderH.Messages)
+		adAuth.POST("/order-messages/read-all", d.AdminOrderH.MarkAllMessagesRead)
+		adAuth.POST("/order-messages/:id/read", d.AdminOrderH.MarkMessageRead)
 
 		adAuth.GET("/settings/payment", d.AdminSettingsH.ListPayment)
 		adAuth.PUT("/settings/payment", d.AdminSettingsH.SubmitPayment)
@@ -364,6 +383,7 @@ func New(d *Deps) *gin.Engine {
 		adAuth.PUT("/site/brand",
 			middleware.RequireFeature(service.FeatureWhiteLabel),
 			d.AdminSiteH.UpdateBrand)
+		adAuth.PUT("/site/storefront", d.AdminSiteH.UpdateStorefront)
 		adAuth.PUT("/site/deployment",
 			middleware.RequireFeature(service.FeaturePrivateDeployment),
 			d.AdminSiteH.UpdateDeployment)
@@ -376,6 +396,7 @@ func New(d *Deps) *gin.Engine {
 	// 小程序（会员端）
 	mb := v1.Group("/member")
 	mb.Use(middleware.Tenant(d.Tenant, true))
+	mb.POST("/auth/dev-login", d.MemberAuthH.DevLogin)
 	mb.POST("/auth/login-by-wechat", d.MemberAuthH.LoginByWechat)
 	mb.GET("/products", d.MemberProductH.List)
 	mb.GET("/products/hot", d.MemberProductH.Hot)
@@ -383,6 +404,7 @@ func New(d *Deps) *gin.Engine {
 	mb.GET("/products/:id", d.MemberProductH.Detail)
 	mb.GET("/categories", d.MemberCategoryH.List)
 	mb.GET("/coupons", d.MemberCouponH.Available)
+	mb.GET("/storefront/config", d.AdminSiteH.GetStorefront)
 	mb.GET("/seckill/activities", middleware.RequireFeature(service.FeatureSeckill), d.MemberSeckillH.List)
 
 	mbAuth := mb.Group("")

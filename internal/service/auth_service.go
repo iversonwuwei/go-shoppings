@@ -63,6 +63,53 @@ type MemberLoginResult struct {
 	Member *model.Member `json:"member"`
 }
 
+func (s *AuthService) MemberDevLogin(ctx context.Context, phone, nickname string) (*MemberLoginResult, error) {
+	if s.env == "production" {
+		return nil, apperr.New(10002, "当前环境不支持开发登录")
+	}
+	if phone == "" {
+		return nil, apperr.New(20001, "手机号不能为空")
+	}
+	m, err := s.members.FindByPhone(ctx, phone)
+	if err != nil {
+		return nil, err
+	}
+	if m == nil {
+		if nickname == "" {
+			if len(phone) >= 4 {
+				nickname = "演示用户" + phone[len(phone)-4:]
+			} else {
+				nickname = "演示用户"
+			}
+		}
+		m = &model.Member{
+			OpenID:     "dev-" + utils.RandHex(8),
+			Phone:      phone,
+			Nickname:   nickname,
+			Status:     1,
+			SessionKey: "dev-session",
+		}
+		if err := s.members.Create(ctx, m); err != nil {
+			return nil, err
+		}
+	} else {
+		if m.Status != 1 {
+			return nil, apperr.New(10010, "账号不存在或被禁用")
+		}
+		if nickname != "" && nickname != m.Nickname {
+			if err := s.members.UpdateFields(ctx, m.ID, map[string]interface{}{"nickname": nickname}); err != nil {
+				return nil, err
+			}
+			m.Nickname = nickname
+		}
+	}
+	tok, err := s.jwt.Issue(jwtx.SubjectMember, m.ID, m.TenantID, m.OpenID)
+	if err != nil {
+		return nil, err
+	}
+	return &MemberLoginResult{Token: tok, Member: m}, nil
+}
+
 // MemberLoginByWechat 通过 code 登录/注册。wx 为租户对应的 wxapp.Client。
 func (s *AuthService) MemberLoginByWechat(ctx context.Context, wx *wxapp.Client, code string) (*MemberLoginResult, error) {
 	sess, err := wx.Code2Session(code)

@@ -33,7 +33,7 @@ type Member struct {
 	Gender        int8           `json:"gender"`
 	Birthday      *time.Time     `gorm:"type:date" json:"birthday,omitempty"`
 	Phone         string         `gorm:"size:20" json:"phone"`
-	LevelID       uint64         `gorm:"index" json:"level_id"`
+	LevelID       *uint64        `gorm:"index" json:"level_id,omitempty"`
 	LevelExpireAt *time.Time     `json:"level_expire_at,omitempty"`
 	Points        int            `gorm:"not null;default:0" json:"points"`
 	GrowthValue   int            `gorm:"not null;default:0" json:"growth_value"`

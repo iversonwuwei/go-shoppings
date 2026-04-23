@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -28,6 +29,29 @@ func (r *TenantRepo) FindByID(ctx context.Context, id uint64) (*model.Tenant, er
 func (r *TenantRepo) FindByCode(ctx context.Context, code string) (*model.Tenant, error) {
 	var t model.Tenant
 	if err := r.db.WithContext(ctx).Where("code = ?", code).First(&t).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &t, nil
+}
+
+func (r *TenantRepo) FindByCustomDomain(ctx context.Context, domain string) (*model.Tenant, error) {
+	domain = strings.TrimSpace(strings.ToLower(domain))
+	domain = strings.TrimSuffix(domain, ".")
+	if idx := strings.Index(domain, ":"); idx >= 0 {
+		domain = domain[:idx]
+	}
+	if domain == "" {
+		return nil, nil
+	}
+	var t model.Tenant
+	if err := r.db.WithContext(ctx).
+		Table("tenants").
+		Joins("JOIN tenant_site_configs ON tenant_site_configs.tenant_id = tenants.id").
+		Where("LOWER(tenant_site_configs.custom_domain) = ? AND tenant_site_configs.domain_verified = 1", domain).
+		First(&t).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}

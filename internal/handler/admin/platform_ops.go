@@ -451,3 +451,74 @@ func (h *PlatformDeploymentHandler) Update(c *gin.Context) {
 	}
 	response.OK(c, nil)
 }
+
+// ==================== 平台 商城快捷入口 ====================
+
+type PlatformStorefrontHandler struct {
+	repo *repository.SiteConfigRepo
+}
+
+func NewPlatformStorefrontHandler(r *repository.SiteConfigRepo) *PlatformStorefrontHandler {
+	return &PlatformStorefrontHandler{repo: r}
+}
+
+func (h *PlatformStorefrontHandler) GetQuickEntries(c *gin.Context) {
+	tid, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+	if tid == 0 {
+		response.Fail(c, apperr.ErrParamInvalid)
+		return
+	}
+	cur, err := h.repo.PlatformFindByTenantID(c.Request.Context(), tid)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	cur = normalizeSiteConfig(tid, cur)
+	response.OK(c, gin.H{"storefront_quick_entries": decodeQuickEntries(cur.StorefrontQuickEntries)})
+}
+
+type platformQuickEntriesReq struct {
+	StorefrontQuickEntries []storefrontQuickEntry `json:"storefront_quick_entries"`
+}
+
+func (h *PlatformStorefrontHandler) UpdateQuickEntries(c *gin.Context) {
+	tid, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+	if tid == 0 {
+		response.Fail(c, apperr.ErrParamInvalid)
+		return
+	}
+	var req platformQuickEntriesReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.FailCode(c, 20001, err.Error())
+		return
+	}
+	ctx := c.Request.Context()
+	cur, err := h.repo.PlatformFindByTenantID(ctx, tid)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	if cur == nil {
+		cur = defaultSiteConfig(tid)
+	}
+	cur.StorefrontQuickEntries = encodeJSON(req.StorefrontQuickEntries)
+	if cur.TenantID == 0 {
+		cur.TenantID = tid
+	}
+	if existing, err := h.repo.PlatformFindByTenantID(ctx, tid); err != nil {
+		response.Fail(c, err)
+		return
+	} else if existing == nil {
+		cur.UpdatedAt = time.Now()
+		if err := h.repo.PlatformInsert(ctx, cur); err != nil {
+			response.Fail(c, err)
+			return
+		}
+	} else if err := h.repo.PlatformUpdateByTenantID(ctx, tid, map[string]interface{}{
+		"storefront_quick_entries": cur.StorefrontQuickEntries,
+	}); err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, gin.H{"storefront_quick_entries": decodeQuickEntries(cur.StorefrontQuickEntries)})
+}

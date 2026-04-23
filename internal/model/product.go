@@ -22,6 +22,16 @@ type ProductCategory struct {
 
 func (ProductCategory) TableName() string { return "product_categories" }
 
+type TenantCategoryAsset struct {
+	TenantID   uint64    `gorm:"primaryKey" json:"tenant_id"`
+	CategoryID uint64    `gorm:"primaryKey" json:"category_id"`
+	Icon       string    `gorm:"size:255" json:"icon"`
+	CoverImage string    `gorm:"size:255" json:"cover_image"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+func (TenantCategoryAsset) TableName() string { return "tenant_category_assets" }
+
 type Product struct {
 	ID             uint64           `gorm:"primaryKey;autoIncrement" json:"id"`
 	TenantID       uint64           `gorm:"not null;index" json:"tenant_id"`

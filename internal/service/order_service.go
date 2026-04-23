@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -15,15 +16,16 @@ import (
 )
 
 type OrderService struct {
-	orders   *repository.OrderRepo
-	logs     *repository.OrderLogRepo
-	products *repository.ProductRepo
-	skus     *repository.ProductSKURepo
-	tenants  *TenantService
+	orders    *repository.OrderRepo
+	logs      *repository.OrderLogRepo
+	messages  *repository.OrderMessageRepo
+	products  *repository.ProductRepo
+	skus      *repository.ProductSKURepo
+	tenants   *TenantService
 }
 
-func NewOrderService(o *repository.OrderRepo, l *repository.OrderLogRepo, p *repository.ProductRepo, s *repository.ProductSKURepo, t *TenantService) *OrderService {
-	return &OrderService{orders: o, logs: l, products: p, skus: s, tenants: t}
+func NewOrderService(o *repository.OrderRepo, l *repository.OrderLogRepo, m *repository.OrderMessageRepo, p *repository.ProductRepo, s *repository.ProductSKURepo, t *TenantService) *OrderService {
+	return &OrderService{orders: o, logs: l, messages: m, products: p, skus: s, tenants: t}
 }
 
 type OrderCreateItem struct {
@@ -45,6 +47,96 @@ type OrderCreateInput struct {
 		Postcode string `json:"postcode"`
 	} `json:"receiver"`
 	BuyerRemark string `json:"buyer_remark"`
+}
+
+type orderTransitionInput struct {
+	TenantID      uint64
+	OrderID       uint64
+	OrderNo       string
+	AllowedFrom   []string
+	ToStatus      string
+	Fields        map[string]interface{}
+	OperatorType  string
+	OperatorID    uint64
+	Action        string
+	Remark        string
+	MessageType   string
+	MessageTitle  string
+	MessageBody   string
+}
+
+func containsStatus(statuses []string, target string) bool {
+	for _, item := range statuses {
+		if item == target {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *OrderService) transition(ctx context.Context, input orderTransitionInput) error {
+	tenantID := input.TenantID
+	if tenantID == 0 {
+		if tenant := ctxkeys.GetTenant(ctx); tenant != nil {
+			tenantID = tenant.ID
+		}
+	}
+	if tenantID == 0 {
+		return apperr.ErrTenantRequired
+	}
+	return s.orders.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var order model.Order
+		query := tx.Where("tenant_id = ?", tenantID)
+		if input.OrderID > 0 {
+			query = query.Where("id = ?", input.OrderID)
+		} else {
+			query = query.Where("order_no = ?", input.OrderNo)
+		}
+		if err := query.First(&order).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				return apperr.ErrNotFound
+			}
+			return err
+		}
+		if !containsStatus(input.AllowedFrom, order.Status) {
+			return apperr.New(30010, "订单状态不可操作")
+		}
+		fields := map[string]interface{}{"status": input.ToStatus}
+		for k, v := range input.Fields {
+			fields[k] = v
+		}
+		if err := tx.Model(&model.Order{}).
+			Where("id = ? AND tenant_id = ? AND status IN ?", order.ID, tenantID, input.AllowedFrom).
+			Updates(fields).Error; err != nil {
+			return err
+		}
+		if err := tx.Create(&model.OrderLog{
+			TenantID:     tenantID,
+			OrderID:      order.ID,
+			OperatorType: input.OperatorType,
+			OperatorID:   input.OperatorID,
+			Action:       input.Action,
+			BeforeStatus: order.Status,
+			AfterStatus:  input.ToStatus,
+			Remark:       input.Remark,
+		}).Error; err != nil {
+			return err
+		}
+		if input.MessageTitle != "" {
+			if err := tx.Create(&model.OrderMessage{
+				TenantID:  tenantID,
+				OrderID:   order.ID,
+				OrderNo:   order.OrderNo,
+				EventType: input.MessageType,
+				Title:     input.MessageTitle,
+				Content:   input.MessageBody,
+				Status:    model.OrderMessageStatusUnread,
+			}).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 func (s *OrderService) Create(ctx context.Context, memberID uint64, in *OrderCreateInput) (*model.Order, error) {
@@ -153,6 +245,15 @@ func (s *OrderService) Create(ctx context.Context, memberID uint64, in *OrderCre
 		OrderID: order.ID, OperatorType: "member", OperatorID: memberID,
 		Action: "create", AfterStatus: order.Status,
 	})
+	if s.messages != nil {
+		_ = s.messages.Create(ctx, &model.OrderMessage{
+			OrderID:   order.ID,
+			OrderNo:   order.OrderNo,
+			EventType: "order_created",
+			Title:     "收到新订单",
+			Content:   fmt.Sprintf("订单 %s 已创建，当前状态：待付款。", order.OrderNo),
+		})
+	}
 	return order, nil
 }
 
@@ -179,46 +280,107 @@ func (s *OrderService) List(ctx context.Context, q repository.OrderListQuery) ([
 
 func (s *OrderService) Cancel(ctx context.Context, id, memberID uint64) error {
 	now := time.Now()
-	if err := s.orders.UpdateStatus(ctx, id, model.OrderStatusPendingPay, model.OrderStatusCancelled,
-		map[string]interface{}{"cancelled_at": now}); err != nil {
-		return err
-	}
-	_ = s.logs.Create(ctx, &model.OrderLog{
-		OrderID: id, OperatorType: "member", OperatorID: memberID,
-		Action: "cancel", BeforeStatus: model.OrderStatusPendingPay, AfterStatus: model.OrderStatusCancelled,
+	return s.transition(ctx, orderTransitionInput{
+		OrderID:      id,
+		AllowedFrom:  []string{model.OrderStatusPendingPay},
+		ToStatus:     model.OrderStatusCancelled,
+		Fields:       map[string]interface{}{"cancelled_at": now},
+		OperatorType: "member",
+		OperatorID:   memberID,
+		Action:       "cancel",
+		MessageType:  "order_cancelled",
+		MessageTitle: "订单已取消",
+		MessageBody:  fmt.Sprintf("订单 #%d 已被买家取消。", id),
 	})
-	return nil
 }
 
 func (s *OrderService) Confirm(ctx context.Context, id, memberID uint64) error {
 	now := time.Now()
-	if err := s.orders.UpdateStatus(ctx, id, model.OrderStatusDelivered, model.OrderStatusCompleted,
-		map[string]interface{}{"completed_at": now}); err != nil {
-		return err
-	}
-	_ = s.logs.Create(ctx, &model.OrderLog{
-		OrderID: id, OperatorType: "member", OperatorID: memberID,
-		Action: "confirm", BeforeStatus: model.OrderStatusDelivered, AfterStatus: model.OrderStatusCompleted,
+	return s.transition(ctx, orderTransitionInput{
+		OrderID:      id,
+		AllowedFrom:  []string{model.OrderStatusShipped, model.OrderStatusDelivered},
+		ToStatus:     model.OrderStatusCompleted,
+		Fields:       map[string]interface{}{"completed_at": now},
+		OperatorType: "member",
+		OperatorID:   memberID,
+		Action:       "confirm",
+		MessageType:  "order_completed",
+		MessageTitle: "订单已完成",
+		MessageBody:  fmt.Sprintf("订单 #%d 已由买家确认收货。", id),
 	})
-	return nil
 }
 
 func (s *OrderService) Ship(ctx context.Context, id uint64, company, no string, adminID uint64) error {
 	now := time.Now()
-	err := s.orders.DB().WithContext(ctx).Model(&model.Order{}).
-		Where("id = ? AND tenant_id = ? AND is_virtual = 0 AND status IN ?", id, ctxkeys.GetTenant(ctx).ID,
-			[]string{model.OrderStatusPaid, model.OrderStatusPreparing}).
-		Updates(map[string]interface{}{
-			"status": model.OrderStatusShipped, "express_company": company,
-			"express_no": no, "shipped_at": now,
-		}).Error
-	if err != nil {
-		return err
-	}
-	_ = s.logs.Create(ctx, &model.OrderLog{
-		OrderID: id, OperatorType: "admin", OperatorID: adminID,
-		Action: "ship", AfterStatus: model.OrderStatusShipped,
-		Remark: company + " " + no,
+	return s.transition(ctx, orderTransitionInput{
+		OrderID:      id,
+		AllowedFrom:  []string{model.OrderStatusPaid, model.OrderStatusPreparing},
+		ToStatus:     model.OrderStatusShipped,
+		Fields:       map[string]interface{}{"express_company": company, "express_no": no, "shipped_at": now},
+		OperatorType: "admin",
+		OperatorID:   adminID,
+		Action:       "ship",
+		Remark:       company + " " + no,
+		MessageType:  "order_shipped",
+		MessageTitle: "订单已发货",
+		MessageBody:  fmt.Sprintf("订单 #%d 已发货，物流：%s %s。", id, company, no),
 	})
-	return nil
+}
+
+func (s *OrderService) MarkPaid(ctx context.Context, tenantID uint64, orderNo string, isVirtual bool) error {
+	now := time.Now()
+	toStatus := model.OrderStatusPaid
+	messageType := "order_paid"
+	messageTitle := "订单已支付"
+	messageBody := fmt.Sprintf("订单 %s 已支付成功，等待卖家处理。", orderNo)
+	fields := map[string]interface{}{"paid_at": now}
+	if isVirtual {
+		toStatus = model.OrderStatusCompleted
+		messageType = "order_paid_completed"
+		messageTitle = "虚拟订单已完成"
+		messageBody = fmt.Sprintf("虚拟订单 %s 已支付并自动完成。", orderNo)
+		fields["completed_at"] = now
+	}
+	return s.transition(ctx, orderTransitionInput{
+		TenantID:     tenantID,
+		OrderNo:      orderNo,
+		AllowedFrom:  []string{model.OrderStatusPendingPay},
+		ToStatus:     toStatus,
+		Fields:       fields,
+		OperatorType: "system",
+		Action:       "pay_success",
+		MessageType:  messageType,
+		MessageTitle: messageTitle,
+		MessageBody:  messageBody,
+	})
+}
+
+func (s *OrderService) ListLogs(ctx context.Context, orderID uint64) ([]model.OrderLog, error) {
+	return s.logs.ListByOrder(ctx, orderID)
+}
+
+func (s *OrderService) ListMessages(ctx context.Context, q repository.OrderMessageListQuery) ([]model.OrderMessage, int64, int64, error) {
+	if q.Page <= 0 {
+		q.Page = 1
+	}
+	if q.Size <= 0 || q.Size > 100 {
+		q.Size = 20
+	}
+	rows, total, err := s.messages.List(ctx, q)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	unread, err := s.messages.CountUnread(ctx)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	return rows, total, unread, nil
+}
+
+func (s *OrderService) MarkMessageRead(ctx context.Context, id uint64) error {
+	return s.messages.MarkRead(ctx, id)
+}
+
+func (s *OrderService) MarkAllMessagesRead(ctx context.Context) error {
+	return s.messages.MarkAllRead(ctx)
 }

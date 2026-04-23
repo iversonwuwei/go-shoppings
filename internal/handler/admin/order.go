@@ -43,6 +43,16 @@ func (h *OrderHandler) Detail(c *gin.Context) {
 	response.OK(c, o)
 }
 
+func (h *OrderHandler) Logs(c *gin.Context) {
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+	rows, err := h.svc.ListLogs(c.Request.Context(), id)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, rows)
+}
+
 func (h *OrderHandler) Ship(c *gin.Context) {
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
 	var body struct {
@@ -58,6 +68,39 @@ func (h *OrderHandler) Ship(c *gin.Context) {
 		adminID = a.ID
 	}
 	if err := h.svc.Ship(c.Request.Context(), id, body.Company, body.No, adminID); err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, nil)
+}
+
+func (h *OrderHandler) Messages(c *gin.Context) {
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	size, _ := strconv.Atoi(c.DefaultQuery("size", "20"))
+	status := c.Query("status")
+	rows, total, unread, err := h.svc.ListMessages(c.Request.Context(), repository.OrderMessageListQuery{
+		Status: status,
+		Page:   page,
+		Size:   size,
+	})
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, gin.H{"list": rows, "total": total, "unread": unread, "page": page, "size": size})
+}
+
+func (h *OrderHandler) MarkMessageRead(c *gin.Context) {
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err := h.svc.MarkMessageRead(c.Request.Context(), id); err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, nil)
+}
+
+func (h *OrderHandler) MarkAllMessagesRead(c *gin.Context) {
+	if err := h.svc.MarkAllMessagesRead(c.Request.Context()); err != nil {
 		response.Fail(c, err)
 		return
 	}

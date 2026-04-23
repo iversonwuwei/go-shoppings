@@ -116,6 +116,74 @@ type OrderLogRepo struct{ db *gorm.DB }
 func NewOrderLogRepo(db *gorm.DB) *OrderLogRepo { return &OrderLogRepo{db: db} }
 
 func (r *OrderLogRepo) Create(ctx context.Context, l *model.OrderLog) error {
-	l.TenantID = EnsureTenant(ctx)
+	if l.TenantID == 0 {
+		l.TenantID = EnsureTenant(ctx)
+	}
 	return r.db.WithContext(ctx).Create(l).Error
+}
+
+func (r *OrderLogRepo) ListByOrder(ctx context.Context, orderID uint64) ([]model.OrderLog, error) {
+	var rows []model.OrderLog
+	err := TenantDB(ctx, r.db).Where("order_id = ?", orderID).Order("id ASC").Find(&rows).Error
+	return rows, err
+}
+
+type OrderMessageRepo struct{ db *gorm.DB }
+
+func NewOrderMessageRepo(db *gorm.DB) *OrderMessageRepo { return &OrderMessageRepo{db: db} }
+
+type OrderMessageListQuery struct {
+	Status string
+	Page   int
+	Size   int
+}
+
+func (r *OrderMessageRepo) Create(ctx context.Context, m *model.OrderMessage) error {
+	if m.TenantID == 0 {
+		m.TenantID = EnsureTenant(ctx)
+	}
+	if m.Status == "" {
+		m.Status = model.OrderMessageStatusUnread
+	}
+	return r.db.WithContext(ctx).Create(m).Error
+}
+
+func (r *OrderMessageRepo) List(ctx context.Context, q OrderMessageListQuery) ([]model.OrderMessage, int64, error) {
+	tx := TenantDB(ctx, r.db).Model(&model.OrderMessage{})
+	if q.Status != "" {
+		tx = tx.Where("status = ?", q.Status)
+	}
+	var total int64
+	if err := tx.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var rows []model.OrderMessage
+	if err := tx.Order("id DESC").Offset((q.Page - 1) * q.Size).Limit(q.Size).Find(&rows).Error; err != nil {
+		return nil, 0, err
+	}
+	return rows, total, nil
+}
+
+func (r *OrderMessageRepo) CountUnread(ctx context.Context) (int64, error) {
+	var total int64
+	err := TenantDB(ctx, r.db).Model(&model.OrderMessage{}).Where("status = ?", model.OrderMessageStatusUnread).Count(&total).Error
+	return total, err
+}
+
+func (r *OrderMessageRepo) MarkRead(ctx context.Context, id uint64) error {
+	now := time.Now()
+	res := TenantDB(ctx, r.db).Model(&model.OrderMessage{}).
+		Where("id = ? AND status = ?", id, model.OrderMessageStatusUnread).
+		Updates(map[string]interface{}{"status": model.OrderMessageStatusRead, "read_at": now})
+	if res.Error != nil {
+		return res.Error
+	}
+	return nil
+}
+
+func (r *OrderMessageRepo) MarkAllRead(ctx context.Context) error {
+	now := time.Now()
+	return TenantDB(ctx, r.db).Model(&model.OrderMessage{}).
+		Where("status = ?", model.OrderMessageStatusUnread).
+		Updates(map[string]interface{}{"status": model.OrderMessageStatusRead, "read_at": now}).Error
 }

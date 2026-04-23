@@ -1,6 +1,9 @@
 package admin
 
 import (
+	"encoding/csv"
+	"fmt"
+	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -103,6 +106,51 @@ func (h *ProductHandler) CreateSKU(c *gin.Context) {
 	response.OK(c, sku)
 }
 
+func (h *ProductHandler) ImportTemplate(c *gin.Context) {
+	c.Header("Content-Type", "text/csv; charset=utf-8")
+	c.Header("Content-Disposition", `attachment; filename="product-import-template.csv"`)
+
+	_, _ = c.Writer.Write([]byte{0xEF, 0xBB, 0xBF})
+	writer := csv.NewWriter(c.Writer)
+	_ = writer.Write([]string{
+		"商品名称", "副标题", "分类名称", "封面图", "商品图集", "视频地址", "商品详情",
+		"价格", "库存", "预警库存", "是否虚拟商品", "配送方式", "运费", "是否上架", "是否推荐", "是否热门", "排序值",
+	})
+	writer.Flush()
+}
+
+func (h *ProductHandler) Import(c *gin.Context) {
+	const maxSize int64 = 5 << 20 // 5MB
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxSize)
+
+	fh, err := c.FormFile("file")
+	if err != nil {
+		response.FailCode(c, 20001, "请选择要导入的 CSV 文件")
+		return
+	}
+	src, err := fh.Open()
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	defer src.Close()
+
+	result, err := h.svc.ImportCSV(c.Request.Context(), src)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	if result.Imported == 0 && len(result.Errors) > 0 {
+		c.JSON(http.StatusBadRequest, response.Body{
+			Code:    20001,
+			Message: fmt.Sprintf("导入失败，共 %d 行有误", len(result.Errors)),
+			Data:    result,
+		})
+		return
+	}
+	response.OK(c, result)
+}
+
 // ==== Category ====
 
 type CategoryHandler struct {
@@ -118,6 +166,29 @@ func (h *CategoryHandler) List(c *gin.Context) {
 		return
 	}
 	response.OK(c, rows)
+}
+
+type categoryAssetReq struct {
+	CoverImage string `json:"cover_image"`
+	Icon       string `json:"icon"`
+}
+
+func (h *CategoryHandler) UpdateTenantAsset(c *gin.Context) {
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+	if id == 0 {
+		response.FailCode(c, 20001, "分类不存在")
+		return
+	}
+	var req categoryAssetReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.FailCode(c, 20001, err.Error())
+		return
+	}
+	if err := h.svc.UpdateTenantAsset(c.Request.Context(), id, req.CoverImage, req.Icon); err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, gin.H{"id": id, "cover_image": req.CoverImage, "icon": req.Icon})
 }
 
 // ListAll 平台端：包含禁用

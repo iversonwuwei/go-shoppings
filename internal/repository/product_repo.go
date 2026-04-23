@@ -3,8 +3,10 @@ package repository
 import (
 	"context"
 	"errors"
+	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"wechat-mall-saas/internal/model"
 )
@@ -188,4 +190,31 @@ func (r *CategoryRepo) Update(ctx context.Context, c *model.ProductCategory) err
 
 func (r *CategoryRepo) Delete(ctx context.Context, id uint64) error {
 	return r.db.WithContext(ctx).Where("tenant_id = 0").Delete(&model.ProductCategory{}, id).Error
+}
+
+type TenantCategoryAssetRepo struct{ db *gorm.DB }
+
+func NewTenantCategoryAssetRepo(db *gorm.DB) *TenantCategoryAssetRepo { return &TenantCategoryAssetRepo{db: db} }
+
+func (r *TenantCategoryAssetRepo) ListByTenant(ctx context.Context, tenantID uint64) ([]model.TenantCategoryAsset, error) {
+	var rows []model.TenantCategoryAsset
+	err := r.db.WithContext(ctx).
+		Where("tenant_id = ?", tenantID).
+		Find(&rows).Error
+	return rows, err
+}
+
+func (r *TenantCategoryAssetRepo) Upsert(ctx context.Context, asset *model.TenantCategoryAsset) error {
+	if asset.CoverImage == "" && asset.Icon == "" {
+		return r.db.WithContext(ctx).
+			Where("tenant_id = ? AND category_id = ?", asset.TenantID, asset.CategoryID).
+			Delete(&model.TenantCategoryAsset{}).Error
+	}
+	asset.UpdatedAt = time.Now()
+	return r.db.WithContext(ctx).
+		Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "tenant_id"}, {Name: "category_id"}},
+			DoUpdates: clause.AssignmentColumns([]string{"icon", "cover_image", "updated_at"}),
+		}).
+		Create(asset).Error
 }

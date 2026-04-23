@@ -61,6 +61,7 @@ func main() {
 	productRepo := repository.NewProductRepo(db)
 	skuRepo := repository.NewProductSKURepo(db)
 	categoryRepo := repository.NewCategoryRepo(db)
+	tenantCategoryAssetRepo := repository.NewTenantCategoryAssetRepo(db)
 
 	memberRepo := repository.NewMemberRepo(db)
 	memberAddressRepo := repository.NewMemberAddressRepo(db)
@@ -69,6 +70,7 @@ func main() {
 
 	orderRepo := repository.NewOrderRepo(db)
 	orderLogRepo := repository.NewOrderLogRepo(db)
+	orderMessageRepo := repository.NewOrderMessageRepo(db)
 
 	paymentRepo := repository.NewPaymentRepo(db)
 	couponRepo := repository.NewCouponRepo(db)
@@ -99,9 +101,9 @@ func main() {
 	tenantSvc := service.NewTenantService(tenantRepo, adminRepo, planRepo, tenantPlanLogRepo, rdb)
 	authSvc := service.NewAuthService(adminRepo, memberRepo, tenantRepo, jwtMgr, rdb, cfg.App.Env)
 	productSvc := service.NewProductService(productRepo, skuRepo, categoryRepo, tenantSvc)
-	categorySvc := service.NewCategoryService(categoryRepo)
-	orderSvc := service.NewOrderService(orderRepo, orderLogRepo, productRepo, skuRepo, tenantSvc)
-	paymentSvc := service.NewPaymentService(paymentRepo, orderRepo, orderLogRepo, tenantRepo, memberRepo, pointsLogRepo, pointsSettingsRepo, tenantSvc)
+	categorySvc := service.NewCategoryService(categoryRepo, tenantCategoryAssetRepo)
+	orderSvc := service.NewOrderService(orderRepo, orderLogRepo, orderMessageRepo, productRepo, skuRepo, tenantSvc)
+	paymentSvc := service.NewPaymentService(paymentRepo, orderRepo, orderLogRepo, orderSvc, tenantRepo, memberRepo, pointsLogRepo, pointsSettingsRepo, tenantSvc)
 	couponSvc := service.NewCouponService(couponRepo, memberCouponRepo, tenantSvc)
 	memberSvc := service.NewMemberService(memberRepo, memberAddressRepo, pointsLogRepo)
 	settingsSvc := service.NewSettingsService(paymentConfigRepo, carrierRepo, tenantSvc)
@@ -154,6 +156,7 @@ func main() {
 		PlatformApiAccessH:  admin.NewPlatformApiAccessHandler(apiTokenRepo),
 		PlatformDomainH:     admin.NewPlatformDomainHandler(siteRepo),
 		PlatformDeploymentH: admin.NewPlatformDeploymentHandler(siteRepo),
+		PlatformStorefrontH: admin.NewPlatformStorefrontHandler(siteRepo),
 
 		MemberAuthH:     member.NewAuthHandler(authSvc, tenantRepo),
 		MemberProductH:  member.NewProductHandler(productSvc),

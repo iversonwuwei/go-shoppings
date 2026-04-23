@@ -35,6 +35,7 @@ DROP TABLE IF EXISTS "product_categories" CASCADE;
 DROP TABLE IF EXISTS "payments" CASCADE;
 DROP TABLE IF EXISTS "admin_action_logs" CASCADE;
 DROP TABLE IF EXISTS "uploads" CASCADE;
+DROP TABLE IF EXISTS "tenant_site_configs" CASCADE;
 DROP TABLE IF EXISTS "admins" CASCADE;
 DROP TABLE IF EXISTS "tenants" CASCADE;
 DROP TABLE IF EXISTS "plans" CASCADE;
@@ -142,6 +143,16 @@ CREATE TABLE "product_categories" (
 );
 CREATE INDEX "idx_product_categories_tenant" ON "product_categories" ("tenant_id");
 CREATE INDEX "idx_product_categories_parent" ON "product_categories" ("parent_id");
+
+CREATE TABLE "tenant_category_assets" (
+    "tenant_id"       BIGINT NOT NULL REFERENCES "tenants"("id"),
+    "category_id"     BIGINT NOT NULL REFERENCES "product_categories"("id"),
+    "icon"            VARCHAR(255),
+    "cover_image"     VARCHAR(255),
+    "updated_at"      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY ("tenant_id", "category_id")
+);
+CREATE INDEX "idx_tenant_category_assets_category" ON "tenant_category_assets" ("category_id");
 
 -- ----------------------------
 -- 6. member_levels（会员等级表）
@@ -408,6 +419,22 @@ CREATE TABLE "order_logs" (
 );
 CREATE INDEX "idx_order_logs_tenant" ON "order_logs" ("tenant_id");
 CREATE INDEX "idx_order_logs_order" ON "order_logs" ("order_id");
+
+CREATE TABLE "order_messages" (
+    "id"              BIGSERIAL PRIMARY KEY,
+    "tenant_id"       BIGINT NOT NULL REFERENCES "tenants"("id"),
+    "order_id"        BIGINT NOT NULL REFERENCES "orders"("id"),
+    "order_no"        VARCHAR(32) NOT NULL,
+    "event_type"      VARCHAR(40) NOT NULL,
+    "title"           VARCHAR(120) NOT NULL,
+    "content"         VARCHAR(500) NOT NULL,
+    "status"          VARCHAR(20) NOT NULL DEFAULT 'unread',
+    "read_at"         TIMESTAMP,
+    "created_at"      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX "idx_order_messages_tenant" ON "order_messages" ("tenant_id");
+CREATE INDEX "idx_order_messages_order" ON "order_messages" ("order_id");
+CREATE INDEX "idx_order_messages_status" ON "order_messages" ("status");
 
 -- ----------------------------
 -- 17. coupons（优惠券表）
@@ -687,3 +714,36 @@ CREATE INDEX IF NOT EXISTS "idx_shipping_carriers_tenant"
     ON "shipping_carriers" ("tenant_id");
 CREATE INDEX IF NOT EXISTS "idx_shipping_carriers_tenant_code"
     ON "shipping_carriers" ("tenant_id", "code");
+
+-- 29. tenant_site_configs（租户站点 / 商城装修配置）
+CREATE TABLE IF NOT EXISTS "tenant_site_configs" (
+    "tenant_id"                        BIGINT PRIMARY KEY REFERENCES "tenants"("id"),
+    "custom_domain"                    VARCHAR(128) NOT NULL DEFAULT '',
+    "domain_verified"                  SMALLINT NOT NULL DEFAULT 0,
+    "ssl_status"                       VARCHAR(20) NOT NULL DEFAULT 'none',
+    "brand_name"                       VARCHAR(100) NOT NULL DEFAULT '',
+    "brand_logo"                       VARCHAR(500) NOT NULL DEFAULT '',
+    "primary_color"                    VARCHAR(32) NOT NULL DEFAULT '#409EFF',
+    "hide_platform_brand"              SMALLINT NOT NULL DEFAULT 0,
+    "footer_text"                      VARCHAR(255) NOT NULL DEFAULT '',
+    "deployment_mode"                  VARCHAR(16) NOT NULL DEFAULT 'shared',
+    "private_endpoint"                 VARCHAR(255) NOT NULL DEFAULT '',
+    "private_notes"                    VARCHAR(500) NOT NULL DEFAULT '',
+    "storefront_notice"                VARCHAR(255) NOT NULL DEFAULT '',
+    "storefront_hero_title"            VARCHAR(120) NOT NULL DEFAULT '',
+    "storefront_hero_subtitle"         VARCHAR(500) NOT NULL DEFAULT '',
+    "storefront_search_placeholder"    VARCHAR(120) NOT NULL DEFAULT '',
+    "storefront_category_title"        VARCHAR(120) NOT NULL DEFAULT '',
+    "storefront_coupon_title"          VARCHAR(120) NOT NULL DEFAULT '',
+    "storefront_hot_title"             VARCHAR(120) NOT NULL DEFAULT '',
+    "storefront_recommend_title"       VARCHAR(120) NOT NULL DEFAULT '',
+    "storefront_quick_entries"         TEXT NOT NULL DEFAULT '[]',
+    "storefront_service_cards"         TEXT NOT NULL DEFAULT '[]',
+    "storefront_banners"               TEXT NOT NULL DEFAULT '[]',
+    "storefront_promo_cards"           TEXT NOT NULL DEFAULT '[]',
+    "storefront_member_entries"        TEXT NOT NULL DEFAULT '[]',
+    "storefront_home_sections"         TEXT NOT NULL DEFAULT '[]',
+    "storefront_profile_sections"      TEXT NOT NULL DEFAULT '[]',
+    "storefront_search_keywords"       TEXT NOT NULL DEFAULT '[]',
+    "updated_at"                       TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

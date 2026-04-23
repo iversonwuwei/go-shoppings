@@ -18,6 +18,7 @@ type PaymentService struct {
 	payments   *repository.PaymentRepo
 	orders     *repository.OrderRepo
 	logs       *repository.OrderLogRepo
+	orderSvc   *OrderService
 	tenants    *repository.TenantRepo
 	members    *repository.MemberRepo
 	pointsLogs *repository.PointsLogRepo
@@ -27,10 +28,11 @@ type PaymentService struct {
 
 func NewPaymentService(
 	p *repository.PaymentRepo, o *repository.OrderRepo, l *repository.OrderLogRepo,
+	os *OrderService,
 	t *repository.TenantRepo, m *repository.MemberRepo, pl *repository.PointsLogRepo,
 	ps *repository.PointsSettingsRepo, ts *TenantService,
 ) *PaymentService {
-	return &PaymentService{payments: p, orders: o, logs: l, tenants: t, members: m, pointsLogs: pl, pointsCfg: ps, tenantSvc: ts}
+	return &PaymentService{payments: p, orders: o, logs: l, orderSvc: os, tenants: t, members: m, pointsLogs: pl, pointsCfg: ps, tenantSvc: ts}
 }
 
 type CreatePaymentResult struct {
@@ -114,14 +116,17 @@ func (s *PaymentService) HandleCallback(ctx context.Context, info *wxpay.Transac
 	}); err != nil {
 		return err
 	}
-	// 更新订单状态为已支付（幂等：仅从 pending_pay 迁移）
-	// 虚拟商品订单直接置为已完成，无需发货/确认收货。
-	_ = s.orders.DB().WithContext(ctx).Model(&model.Order{}).
-		Where("order_no = ? AND tenant_id = ? AND status = ? AND is_virtual = 0", p.OrderNo, p.TenantID, model.OrderStatusPendingPay).
-		Updates(map[string]interface{}{"status": model.OrderStatusPaid, "paid_at": now}).Error
-	_ = s.orders.DB().WithContext(ctx).Model(&model.Order{}).
-		Where("order_no = ? AND tenant_id = ? AND status = ? AND is_virtual = 1", p.OrderNo, p.TenantID, model.OrderStatusPendingPay).
-		Updates(map[string]interface{}{"status": model.OrderStatusCompleted, "paid_at": now, "completed_at": now}).Error
+	var order model.Order
+	if err := s.orders.DB().WithContext(ctx).
+		Where("order_no = ? AND tenant_id = ?", p.OrderNo, p.TenantID).
+		First(&order).Error; err != nil {
+		return err
+	}
+	if s.orderSvc != nil {
+		if err := s.orderSvc.MarkPaid(ctx, p.TenantID, p.OrderNo, order.IsVirtual == 1); err != nil {
+			return err
+		}
+	}
 
 	// 发放积分（仅当租户套餐启用 points 功能且设置启用）
 	s.grantPoints(ctx, p)
@@ -164,10 +169,10 @@ func (s *PaymentService) grantPoints(ctx context.Context, p *model.Payment) {
 	}
 	// 等级倍率
 	mult := decimal.NewFromInt(1)
-	if member.LevelID > 0 {
+	if member.LevelID != nil && *member.LevelID > 0 {
 		var lvl model.MemberLevel
 		if err := s.orders.DB().WithContext(ctx).
-			Where("id = ? AND tenant_id = ?", member.LevelID, p.TenantID).First(&lvl).Error; err == nil {
+			Where("id = ? AND tenant_id = ?", *member.LevelID, p.TenantID).First(&lvl).Error; err == nil {
 			if lvl.PointsMult.GreaterThan(decimal.Zero) {
 				mult = lvl.PointsMult
 			}
