@@ -12,9 +12,13 @@ type JSONB []string
 
 func (j JSONB) Value() (driver.Value, error) {
 	if j == nil {
-		return []byte("[]"), nil
+		return "[]", nil
 	}
-	return json.Marshal(j)
+	bs, err := json.Marshal(j)
+	if err != nil {
+		return nil, err
+	}
+	return string(bs), nil
 }
 
 func (j *JSONB) Scan(v interface{}) error {
@@ -41,11 +45,36 @@ func (j *JSONB) Scan(v interface{}) error {
 // JSONRaw 任意 jsonb
 type JSONRaw []byte
 
-func (j JSONRaw) Value() (driver.Value, error) {
+func (j JSONRaw) MarshalJSON() ([]byte, error) {
 	if len(j) == 0 {
 		return []byte("{}"), nil
 	}
-	return []byte(j), nil
+	if !json.Valid(j) {
+		return nil, errors.New("invalid json raw value")
+	}
+	return j, nil
+}
+
+func (j *JSONRaw) UnmarshalJSON(v []byte) error {
+	if len(v) == 0 || string(v) == "null" {
+		*j = nil
+		return nil
+	}
+	if !json.Valid(v) {
+		return errors.New("invalid json raw value")
+	}
+	*j = append((*j)[0:0], v...)
+	return nil
+}
+
+func (j JSONRaw) Value() (driver.Value, error) {
+	if len(j) == 0 {
+		return "{}", nil
+	}
+	if !json.Valid(j) {
+		return nil, errors.New("invalid json raw value")
+	}
+	return string(j), nil
 }
 
 func (j *JSONRaw) Scan(v interface{}) error {
