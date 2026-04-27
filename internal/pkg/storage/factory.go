@@ -22,6 +22,17 @@ func New(cfg config.StorageConfig) (Storage, error) {
 			BaseURL:    cfg.Minio.BaseURL,
 			PublicRead: cfg.Minio.PublicRead,
 		})
+	case "supabase":
+		return NewSupabase(SupabaseOptions{
+			ProjectURL:       cfg.Supabase.ProjectURL,
+			ServiceRoleKey:   cfg.Supabase.ServiceRoleKey,
+			Bucket:           cfg.Supabase.Bucket,
+			PublicRead:       cfg.Supabase.PublicRead,
+			BaseURL:          cfg.Supabase.BaseURL,
+			SignedURLExpires: cfg.Supabase.SignedURLExpires,
+			CreateBucket:     cfg.Supabase.CreateBucket,
+			Upsert:           cfg.Supabase.Upsert,
+		})
 	default:
 		return nil, fmt.Errorf("unknown storage type: %s", cfg.Type)
 	}

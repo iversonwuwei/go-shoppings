@@ -1,4 +1,4 @@
-// Package storage 对象存储抽象（支持 local / minio），未来可扩展 oss / cos。
+// Package storage 对象存储抽象（支持 local / minio / supabase），未来可扩展 oss / cos。
 package storage
 
 import (
@@ -16,7 +16,7 @@ type ObjectMeta struct {
 
 // Storage 通用对象存储接口
 type Storage interface {
-	// Type 返回实现类型：local / minio
+	// Type 返回实现类型：local / minio / supabase
 	Type() string
 	// Put 上传对象，返回可访问 URL。
 	// key 为对象路径（不含前导斜杠），如 "tenant-1/products/202604/uuid.jpg"

@@ -9,13 +9,15 @@ app:
 
 database:
   driver: "postgres"
-  host: "127.0.0.1"
-  port: 5433
-  user: "postgres"
-  password: "postgres123"
-  name: "wechat_mall_saas"
-  sslmode: "disable"
-  max_open_conns: 100
+  dsn: "${SUPABASE_DB_DSN}"    # 推荐使用 Supabase 连接串：postgresql://...?...sslmode=require
+  host: ""                     # 不使用 dsn 时，可改用 host/port/user/password/name
+  port: 5432
+  user: ""
+  password: ""
+  name: "postgres"
+  sslmode: "require"
+  prefer_simple_protocol: true # Supabase pooler / PgBouncer 场景建议开启
+  max_open_conns: 20
   max_idle_conns: 20
   conn_max_lifetime: 3600
 
@@ -47,7 +49,7 @@ wxpay:
   notify_url: "http://localhost:8080/api/v1/public/subscription/callback"
 
 storage:
-  type: "minio"              # local / minio
+  type: "supabase"           # local / minio / supabase
   local:
     path: "./uploads"
     base_url: "http://localhost:8080/uploads"
@@ -60,6 +62,15 @@ storage:
     region: "us-east-1"
     base_url: ""             # 留空则走 endpoint；填写 CDN/反代域名则返回该前缀
     public_read: true        # true=bucket 公开读，返回直链；false=返回 7 天预签名 URL
+  supabase:
+    project_url: "${SUPABASE_URL}"
+    service_role_key: "${SUPABASE_SERVICE_ROLE_KEY}"
+    bucket: "${SUPABASE_STORAGE_BUCKET}"
+    public_read: true        # 商品/分类图片建议使用公开 bucket，便于小程序直接展示
+    base_url: ""             # 可填 CDN 或自定义域名；留空使用 Supabase public object URL
+    signed_url_expires: 604800
+    create_bucket: true      # bucket 不存在时用 service_role 自动创建
+    upsert: true
 
 logging:
   level: "debug"             # debug / info / warn / error

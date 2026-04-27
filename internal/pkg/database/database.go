@@ -2,6 +2,7 @@ package database
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"gorm.io/driver/postgres"
@@ -12,10 +13,15 @@ import (
 )
 
 func New(cfg config.DatabaseConfig) (*gorm.DB, error) {
-	dsn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s TimeZone=Asia/Shanghai",
-		cfg.Host, cfg.Port, cfg.User, cfg.Password, cfg.Name, cfg.SSLMode)
+	dsn, err := buildDSN(cfg)
+	if err != nil {
+		return nil, err
+	}
 
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
+	db, err := gorm.Open(postgres.New(postgres.Config{
+		DSN:                  dsn,
+		PreferSimpleProtocol: cfg.PreferSimpleProtocol,
+	}), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Warn),
 	})
 	if err != nil {
@@ -31,4 +37,23 @@ func New(cfg config.DatabaseConfig) (*gorm.DB, error) {
 	sqlDB.SetConnMaxLifetime(time.Duration(cfg.ConnMaxLifetime) * time.Second)
 
 	return db, nil
+}
+
+func buildDSN(cfg config.DatabaseConfig) (string, error) {
+	if dsn := strings.TrimSpace(cfg.DSN); dsn != "" {
+		return dsn, nil
+	}
+
+	if cfg.Port == 0 {
+		cfg.Port = 5432
+	}
+	if strings.TrimSpace(cfg.SSLMode) == "" {
+		cfg.SSLMode = "require"
+	}
+	if strings.TrimSpace(cfg.Host) == "" || strings.TrimSpace(cfg.User) == "" || strings.TrimSpace(cfg.Name) == "" {
+		return "", fmt.Errorf("database: set database.dsn or SUPABASE_DB_DSN/DATABASE_URL")
+	}
+
+	return fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s TimeZone=Asia/Shanghai",
+		cfg.Host, cfg.Port, cfg.User, cfg.Password, cfg.Name, cfg.SSLMode), nil
 }

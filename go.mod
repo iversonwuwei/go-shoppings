@@ -6,9 +6,11 @@ require (
 	github.com/gin-gonic/gin v1.9.1
 	github.com/golang-jwt/jwt/v5 v5.2.0
 	github.com/google/uuid v1.6.0
+	github.com/minio/minio-go/v7 v7.0.100
 	github.com/redis/go-redis/v9 v9.5.1
 	github.com/shopspring/decimal v1.3.1
 	github.com/spf13/viper v1.18.2
+	github.com/subosito/gotenv v1.6.0
 	go.uber.org/zap v1.27.0
 	golang.org/x/crypto v0.46.0
 	golang.org/x/time v0.5.0
@@ -46,7 +48,6 @@ require (
 	github.com/mattn/go-isatty v0.0.19 // indirect
 	github.com/minio/crc64nvme v1.1.1 // indirect
 	github.com/minio/md5-simd v1.1.2 // indirect
-	github.com/minio/minio-go/v7 v7.0.100 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
@@ -59,7 +60,6 @@ require (
 	github.com/spf13/afero v1.11.0 // indirect
 	github.com/spf13/cast v1.6.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
-	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/tinylib/msgp v1.6.1 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.2.11 // indirect
