@@ -2,9 +2,11 @@ package admin
 
 import (
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
+	apperr "wechat-mall-saas/internal/pkg/errors"
 	"wechat-mall-saas/internal/pkg/response"
 	"wechat-mall-saas/internal/service"
 )
@@ -26,12 +28,28 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		response.FailCode(c, 20001, err.Error())
 		return
 	}
-	res, err := h.auth.AdminLogin(c.Request.Context(), req.Username, req.Password, c.ClientIP())
+	tenantID, err := loginTenantScope(c)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	res, err := h.auth.AdminLogin(c.Request.Context(), req.Username, req.Password, c.ClientIP(), tenantID)
 	if err != nil {
 		response.Fail(c, err)
 		return
 	}
 	response.OK(c, res)
+}
+
+func loginTenantScope(c *gin.Context) (uint64, error) {
+	if strings.HasPrefix(c.FullPath(), "/api/v1/platform/") {
+		return 0, nil
+	}
+	tenantID := parseTenantHeader(c)
+	if tenantID == 0 {
+		return 0, apperr.ErrTenantRequired
+	}
+	return tenantID, nil
 }
 
 // ========== 短信验证码 / 手机号登录 / 忘记密码 ==========

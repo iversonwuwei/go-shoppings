@@ -59,11 +59,19 @@ wechat-mall-saas/
 - wechat_appid, wechat_secret（加密）, wechat_mchid, wechat_apiv3_key（加密）, wechat_cert_serial
 - plan_id（外键plans）, plan_expire_at, status（0待审核/1正常/2欠费/3封禁）
 - brand_name, brand_logo, brand_theme, brand_domain（品牌定制）
+- billing_cycle（monthly/yearly）, extra_features（JSONB，平台额外授予功能）
 - created_at, updated_at
 
 **tenant_plan_logs（套餐变更记录）**
 - id, tenant_id, old_plan_id, new_plan_id, change_type（create/renew/upgrade/downgrade）
 - effective_at, expire_at, amount, created_at
+
+### 数据库流程表覆盖要求
+
+- 初始化脚本和迁移脚本必须覆盖运行态 Go 模型中声明的表，避免接口流程进入后才暴露 `relation does not exist`。
+- 增量建表必须幂等：`CREATE TABLE IF NOT EXISTS`、`ALTER TABLE ... ADD COLUMN IF NOT EXISTS`、`CREATE INDEX IF NOT EXISTS`。
+- 当前必须覆盖的增量流程表：`api_tokens`、`api_request_logs`、`sms_settings`、`sms_templates`、`sms_logs`、`distribution_settings`、`distributors`、`commission_logs`、`groupon_activities`、`groupons`、`groupon_members`、`points_settings`、`delivery_settings`、`tenant_subscription_orders`。
+- 当前必须覆盖的租户扩展字段：`tenants.billing_cycle`、`tenants.extra_features`。
 
 ### 商城业务层表
 
@@ -242,6 +250,7 @@ var Plans = []Plan{
 
 ### 认证与租户
 - POST /api/v1/admin/auth/login {username, password} → {token, admin_info}
+- 商户登录必须携带 X-Tenant-ID，并校验管理员 tenant_id 与请求租户一致；租户编号解析需兼容大小写输入；本地演示商户账号为租户编号 TEST001、用户名 smokeadmin22、密码 admin123。
 - POST /api/v1/admin/auth/refresh {refresh_token} → {token}
 - POST /api/v1/tenant/register {company_name, contact_info, plan_id} → {tenant_id, status}
 - GET /api/v1/tenant/plans → [plans]
@@ -261,11 +270,18 @@ var Plans = []Plan{
 - GET /api/v1/member/distribution（我的下线+佣金）
 
 ### 小程序端 - 商品
-- GET /api/v1/products {page, page_size, category_id, keyword, sort, is_recommend, is_hot}
-- GET /api/v1/products/{id}
-- GET /api/v1/products/{id}/skus
-- GET /api/v1/categories
-- GET /api/v1/categories/{id}/products
+
+- GET /api/v1/member/products {page, size, category_id, keyword} → {list, total, page, size}
+- GET /api/v1/member/products/{id} → {product, skus}
+- GET /api/v1/member/products/hot {page, size} → {list, total}
+- GET /api/v1/member/products/recommend {page, size} → {list, total}
+- GET /api/v1/member/categories → [categories]
+- 小程序分类页“全部商品”默认调用 /api/v1/member/products，首屏 page=1，触底递增 page 并追加 list，切换分类/搜索/热门/推荐时重置页码和列表。
+
+### 小程序端 - UI 交互
+
+- 按钮布局必须按场景判断：登录、保存、空态引导等主行动居中或满宽；结算/订单详情使用跟随内容的行内操作组；搜索、领取、数量加减等局部工具按钮保持紧凑。
+- 全局按钮样式只负责外观，不应通过通用选择器强制所有卡片按钮居右。
 
 ### 小程序端 - 订单
 - POST /api/v1/orders {items:[{product_id, sku_id, quantity}], address_id, coupon_id, buyer_remark, delivery_type}

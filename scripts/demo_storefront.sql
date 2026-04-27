@@ -1,20 +1,16 @@
 -- 演示商城数据：测试租户 TEST001
 -- 可重复执行；若数据已存在则跳过
 
-WITH tenant AS (
-    SELECT id FROM tenants WHERE code = 'TEST001'
-)
 INSERT INTO product_categories (tenant_id, parent_id, name, cover_image, sort, status)
-SELECT tenant.id, 0, v.name, v.cover_image, v.sort, 1
-FROM tenant
-CROSS JOIN (
+SELECT 0, 0, v.name, v.cover_image, v.sort, 1
+FROM (
     VALUES
         ('鲜食水果', 'https://images.unsplash.com/photo-1619566636858-adf3ef46400b?auto=format&fit=crop&w=800&q=80', 10),
         ('人气零食', 'https://images.unsplash.com/photo-1585238342024-78d387f4a707?auto=format&fit=crop&w=800&q=80', 20),
         ('生活好物', 'https://images.unsplash.com/photo-1511556532299-8f662fc26c06?auto=format&fit=crop&w=800&q=80', 30)
 ) AS v(name, cover_image, sort)
 WHERE NOT EXISTS (
-    SELECT 1 FROM product_categories c WHERE c.tenant_id = tenant.id AND c.name = v.name
+    SELECT 1 FROM product_categories c WHERE c.tenant_id = 0 AND c.name = v.name
 );
 
 WITH tenant AS (
@@ -44,7 +40,7 @@ WITH tenant AS (
     SELECT id FROM tenants WHERE code = 'TEST001'
 ),
 cats AS (
-    SELECT id, name, tenant_id FROM product_categories WHERE tenant_id = (SELECT id FROM tenant)
+    SELECT id, name FROM product_categories WHERE tenant_id = 0
 )
 INSERT INTO products (
     tenant_id, category_id, name, subtitle, cover_image, images, description,

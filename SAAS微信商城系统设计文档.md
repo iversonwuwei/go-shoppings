@@ -250,6 +250,8 @@ const (
 | brand_logo | VARCHAR(255) | 店铺Logo |
 | brand_theme | VARCHAR(20) | 主题色 |
 | brand_domain | VARCHAR(100) | 独立域名 |
+| billing_cycle | VARCHAR(10) | 计费周期：monthly/yearly |
+| extra_features | JSONB | 平台额外授予功能列表 |
 | status | TINYINT(1) | 状态：0待审核/1正常/2欠费/3封禁 |
 | reject_reason | VARCHAR(255) | 审核拒绝原因 |
 
@@ -343,11 +345,35 @@ tenant_id，含 type(cash/discount/shipping)、threshold_amount、discount_value
 
 含 level（1/2级）、commission_rate、commission_amount、status(pending/settled/withdrawn)
 
+#### groupon_activities / groupons / groupon_members（拼团运行表）
+
+拼团管理端和小程序拼团流程使用运行态拼团模型：`groupon_activities` 记录活动、商品、团购价、成团人数和有效期；`groupons` 记录每个团实例和成团状态；`groupon_members` 记录参团会员与订单绑定。初始化和补丁脚本必须创建这三张表，避免拼团页面或接口因缺表失败。
+
+#### distribution_settings / distributors / commission_logs（分销运行表）
+
+分销中心、分销员审核、佣金结算流程使用运行态分销模型：`distribution_settings` 记录租户分销规则；`distributors` 记录会员分销员状态和上下级；`commission_logs` 记录订单产生的待结算/已结算佣金。历史 `distribution_relations`、`distribution_commissions` 可作为旧结构保留，但新流程以运行态模型表为准。
+
+#### points_settings（积分规则表）
+
+每个租户一行，记录积分开关、下单积分发放比例、最低发放金额和抵扣汇率。积分明细仍写入 `points_logs`。
+
+#### sms_settings / sms_templates / sms_logs（短信通知表）
+
+短信配置、模板和发送日志分表存储，覆盖验证码、订单通知、套餐到期提醒等流程。
+
+#### api_tokens / api_request_logs（开放 API 表）
+
+开放 API 功能需要 `api_tokens` 存储租户密钥、权限范围和状态，`api_request_logs` 记录调用路径、状态码、耗时和来源 IP。
+
 ### 3.6 支付层表
 
 #### payments（支付记录表）
 
 tenant_id + member_id，payment_no(唯一)，含 wechat_transaction_id、refund_amount/refund_status
+
+#### tenant_subscription_orders（租户订阅订单表）
+
+租户续费、升级、降级前先创建订阅订单，记录 plan_id、billing_cycle、amount、order_no、支付流水、支付前后到期时间。微信支付回调成功后再更新租户套餐和 `tenant_plan_logs`。
 
 ### 3.7 系统层表
 
@@ -358,6 +384,16 @@ tenant_id + member_id，payment_no(唯一)，含 wechat_transaction_id、refund_
 #### uploads（文件记录）
 
 含 tenant_id、storage_type(local/oss/cos)、storage_url
+
+#### delivery_settings（配送设置表）
+
+每个租户一行，覆盖快递、同城配送、自提三类配送能力的开关、费用、半径、门店地址和联系电话。
+
+### 3.8 数据库脚本覆盖要求
+
+- `scripts/init_db.sql` 必须覆盖基础表和当前运行态模型所需表；后续增量统一放入 `scripts/migrations/`，并保持 `CREATE TABLE IF NOT EXISTS`、`ALTER TABLE ... ADD COLUMN IF NOT EXISTS`、`CREATE INDEX IF NOT EXISTS` 的幂等写法。
+- 本地演示库必须至少包含：`api_tokens`、`api_request_logs`、`sms_settings`、`sms_templates`、`sms_logs`、`distribution_settings`、`distributors`、`commission_logs`、`groupon_activities`、`groupons`、`groupon_members`、`points_settings`、`delivery_settings`、`tenant_subscription_orders`。
+- 租户表必须包含 `billing_cycle` 和 `extra_features`，用于入驻计费周期和平台额外授权功能。缺失字段或缺失表应通过可重复执行的补丁脚本修复，并在执行后用 information_schema 校验。
 
 ---
 
@@ -388,6 +424,8 @@ tenant_id + member_id，payment_no(唯一)，含 wechat_transaction_id、refund_
 | POST | /api/v1/platform/tenants/{id}/audit | 审核租户 |
 | PUT | /api/v1/platform/tenants/{id}/status | 修改租户状态 |
 
+本地演示账号：平台端使用 `admin / admin123`；商户端使用租户编号 `TEST001`、账号 `smokeadmin22 / admin123`。租户编号解析需兼容大小写输入，商户密码登录必须校验管理员 `tenant_id` 与请求头 `X-Tenant-ID` 一致，避免账号跨租户登录。
+
 #### 小程序端 - 会员
 
 | 方法 | 路径 | 说明 |
@@ -405,13 +443,15 @@ tenant_id + member_id，payment_no(唯一)，含 wechat_transaction_id、refund_
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | /api/v1/products | 商品列表（分页+筛选） |
-| GET | /api/v1/products/{id} | 商品详情 |
-| GET | /api/v1/products/{id}/skus | SKU列表 |
-| GET | /api/v1/products/hot | 热门商品 |
-| GET | /api/v1/products/recommend | 推荐商品 |
-| GET | /api/v1/categories | 分类列表（树形） |
-| GET | /api/v1/categories/{id}/products | 分类下的商品 |
+| GET | /api/v1/member/products | 商品列表（分页+筛选） |
+| GET | /api/v1/member/products/{id} | 商品详情（含 SKU 列表） |
+| GET | /api/v1/member/products/hot | 热门商品（分页） |
+| GET | /api/v1/member/products/recommend | 推荐商品（分页） |
+| GET | /api/v1/member/categories | 平台统一商品分类列表 |
+
+商品列表查询参数：`page` 默认 1，`size` 默认 20、最大 100，`category_id` 按分类筛选，`keyword` 按商品名称模糊搜索。接口仅返回当前租户已上架商品，响应 `data` 为 `{ list, total, page, size }`。
+
+小程序分类页 `/pages/catalog/index`：默认“全部商品”不传 `category_id`、`keyword` 和推荐/热门模式，首屏加载第 1 页；用户触底时按相同筛选条件递增 `page` 批量追加，直到已加载数量达到 `total`。切换分类、搜索词、热门/推荐筛选时必须重置列表和页码，重新从第 1 页加载；空态仅在第 1 页无数据时展示。
 
 #### 小程序端 - 订单
 
@@ -531,6 +571,13 @@ tenant_id + member_id，payment_no(唯一)，含 wechat_transaction_id、refund_
 - 每个租户通过 ext.json 隔离配置
 - 租户上传 logo/店名后自动替换
 - 云开发或静态托管切换数据源
+
+### 5.4 小程序按钮布局约定
+
+- 空态引导、登录、资料保存、地址保存等单一主行动应居中或满宽显示，强化当前页面的下一步，不统一靠右。
+- 结算栏、订单详情等包含金额或多动作的区域，按钮跟随内容上下文做行内布局；主按钮保留清晰视觉权重，次要按钮与主按钮组成等宽或紧凑操作组。
+- 搜索、领取优惠券、数量加减等短动作属于局部工具操作，可保留紧凑按钮并贴近对应输入或数据项。
+- 全局样式只定义按钮外观，不强制所有卡片按钮右对齐；具体页面按业务场景决定宽度、居中、行内或操作组布局。
 
 ---
 

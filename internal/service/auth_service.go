@@ -35,12 +35,12 @@ type AdminLoginResult struct {
 	Admin        *model.Admin `json:"admin"`
 }
 
-func (s *AuthService) AdminLogin(ctx context.Context, username, password, ip string) (*AdminLoginResult, error) {
+func (s *AuthService) AdminLogin(ctx context.Context, username, password, ip string, tenantID uint64) (*AdminLoginResult, error) {
 	a, err := s.admins.FindByUsername(ctx, username)
 	if err != nil {
 		return nil, err
 	}
-	if a == nil || a.Status != 1 {
+	if a == nil || a.Status != 1 || a.TenantID != tenantID {
 		return nil, apperr.New(10010, "账号不存在或被禁用")
 	}
 	if !utils.CheckPassword(a.Password, password) {

@@ -75,12 +75,14 @@ CREATE TABLE "tenants" (
     "wechat_cert_serial"  VARCHAR(100),
     "plan_id"             BIGINT NOT NULL REFERENCES "plans"("id"),
     "plan_expire_at"      TIMESTAMP NOT NULL,
+    "billing_cycle"       VARCHAR(10) NOT NULL DEFAULT 'yearly',
     "brand_name"          VARCHAR(50),
     "brand_logo"          VARCHAR(255),
     "brand_theme"         VARCHAR(20) DEFAULT '#1989fa',
     "brand_domain"       VARCHAR(100),
     "status"              SMALLINT NOT NULL DEFAULT 0,
     "reject_reason"       VARCHAR(255),
+    "extra_features"      JSONB NOT NULL DEFAULT '[]'::jsonb,
     "created_at"          TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at"          TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -92,6 +94,7 @@ CREATE INDEX "idx_tenants_status" ON "tenants" ("status");
 -- ----------------------------
 CREATE TABLE "admins" (
     "id"              BIGSERIAL PRIMARY KEY,
+    "tenant_id"       BIGINT NOT NULL DEFAULT 0,
     "username"        VARCHAR(50) NOT NULL UNIQUE,
     "password"        VARCHAR(255) NOT NULL,
     "real_name"       VARCHAR(50),
@@ -105,10 +108,12 @@ CREATE TABLE "admins" (
     "updated_at"      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX "idx_admins_username" ON "admins" ("username");
+CREATE INDEX "idx_admins_tenant_phone" ON "admins" ("tenant_id", "phone");
+CREATE INDEX "idx_admins_phone" ON "admins" ("phone");
 
 -- 超级管理员: admin / admin123
-INSERT INTO "admins" ("username", "password", "real_name", "role", "status")
-VALUES ('admin', '$2a$10$PKsSIoYu.NKle7iZ/apcH.rU7b4YEdwM1ekI56B.z3vgL9DRw2kB6', '超级管理员', 'super', 1);
+INSERT INTO "admins" ("tenant_id", "username", "password", "real_name", "role", "status")
+VALUES (0, 'admin', '$2a$10$.laeckOx4u7cZPzuSihBReyLGYuM65e7qhw9I3gshd6GWMs6EXD/C', '超级管理员', 'super', 1);
 
 -- ----------------------------
 -- 4. tenant_plan_logs（套餐变更记录）
@@ -131,7 +136,7 @@ CREATE INDEX "idx_tenant_plan_logs_tenant" ON "tenant_plan_logs" ("tenant_id");
 -- ----------------------------
 CREATE TABLE "product_categories" (
     "id"              BIGSERIAL PRIMARY KEY,
-    "tenant_id"       BIGINT NOT NULL REFERENCES "tenants"("id"),
+    "tenant_id"       BIGINT NOT NULL DEFAULT 0,
     "parent_id"       BIGINT NOT NULL DEFAULT 0,
     "name"            VARCHAR(50) NOT NULL,
     "icon"            VARCHAR(255),
@@ -715,7 +720,24 @@ CREATE INDEX IF NOT EXISTS "idx_shipping_carriers_tenant"
 CREATE INDEX IF NOT EXISTS "idx_shipping_carriers_tenant_code"
     ON "shipping_carriers" ("tenant_id", "code");
 
--- 29. tenant_site_configs（租户站点 / 商城装修配置）
+-- 29. platform_settings（平台全局设置，单行 id=1）
+CREATE TABLE IF NOT EXISTS "platform_settings" (
+    "id"                  BIGSERIAL PRIMARY KEY,
+    "platform_name"       TEXT DEFAULT '',
+    "platform_logo"       TEXT DEFAULT '',
+    "support_phone"       TEXT DEFAULT '',
+    "support_email"       TEXT DEFAULT '',
+    "wxpay_app_id"        TEXT DEFAULT '',
+    "wxpay_mch_id"        TEXT DEFAULT '',
+    "wxpay_apiv3_key"     TEXT DEFAULT '',
+    "wxpay_cert_serial"   TEXT DEFAULT '',
+    "wxpay_notify_url"    TEXT DEFAULT '',
+    "updated_at"          TIMESTAMPTZ DEFAULT NOW()
+);
+
+INSERT INTO "platform_settings" ("id") VALUES (1) ON CONFLICT ("id") DO NOTHING;
+
+-- 30. tenant_site_configs（租户站点 / 商城装修配置）
 CREATE TABLE IF NOT EXISTS "tenant_site_configs" (
     "tenant_id"                        BIGINT PRIMARY KEY REFERENCES "tenants"("id"),
     "custom_domain"                    VARCHAR(128) NOT NULL DEFAULT '',
@@ -747,3 +769,216 @@ CREATE TABLE IF NOT EXISTS "tenant_site_configs" (
     "storefront_search_keywords"       TEXT NOT NULL DEFAULT '[]',
     "updated_at"                       TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+-- 31. runtime flow tables（运行态功能表，保持和 Go model / migrations 一致）
+CREATE TABLE IF NOT EXISTS "tenant_subscription_orders" (
+    "id"                 BIGSERIAL PRIMARY KEY,
+    "tenant_id"          BIGINT NOT NULL,
+    "plan_id"            BIGINT NOT NULL,
+    "billing_cycle"      VARCHAR(10) NOT NULL,
+    "amount"             NUMERIC(10,2) NOT NULL,
+    "status"             SMALLINT NOT NULL DEFAULT 0,
+    "order_no"           VARCHAR(64) NOT NULL UNIQUE,
+    "pay_transaction_id" VARCHAR(64) NOT NULL DEFAULT '',
+    "pay_at"             TIMESTAMP NULL,
+    "expire_before"      TIMESTAMP NULL,
+    "expire_after"       TIMESTAMP NULL,
+    "created_at"         TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at"         TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS "idx_tenant_sub_orders_tenant" ON "tenant_subscription_orders" ("tenant_id", "status");
+CREATE INDEX IF NOT EXISTS "idx_tenant_sub_orders_created" ON "tenant_subscription_orders" ("created_at" DESC);
+
+CREATE TABLE IF NOT EXISTS "points_settings" (
+    "tenant_id"   BIGINT PRIMARY KEY REFERENCES "tenants"("id"),
+    "enabled"     SMALLINT NOT NULL DEFAULT 1,
+    "earn_rate"   NUMERIC(10,4) NOT NULL DEFAULT 1,
+    "min_amount"  NUMERIC(10,2) NOT NULL DEFAULT 0,
+    "redeem_rate" INT NOT NULL DEFAULT 100,
+    "remark"      VARCHAR(500) NOT NULL DEFAULT '',
+    "updated_at"  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS "delivery_settings" (
+    "tenant_id"            BIGINT PRIMARY KEY REFERENCES "tenants"("id"),
+    "express_enabled"      SMALLINT NOT NULL DEFAULT 1,
+    "express_free_amount"  NUMERIC(10,2) NOT NULL DEFAULT 0,
+    "express_default_fee"  NUMERIC(10,2) NOT NULL DEFAULT 0,
+    "city_enabled"         SMALLINT NOT NULL DEFAULT 0,
+    "city_radius_km"       NUMERIC(6,2) NOT NULL DEFAULT 5,
+    "city_base_fee"        NUMERIC(10,2) NOT NULL DEFAULT 5,
+    "city_per_km_fee"      NUMERIC(10,2) NOT NULL DEFAULT 1,
+    "city_min_order"       NUMERIC(10,2) NOT NULL DEFAULT 0,
+    "pickup_enabled"       SMALLINT NOT NULL DEFAULT 0,
+    "pickup_address"       VARCHAR(255) NOT NULL DEFAULT '',
+    "pickup_hours"         VARCHAR(100) NOT NULL DEFAULT '',
+    "pickup_phone"         VARCHAR(30) NOT NULL DEFAULT '',
+    "remark"               VARCHAR(500) NOT NULL DEFAULT '',
+    "updated_at"           TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS "sms_settings" (
+    "tenant_id"     BIGINT PRIMARY KEY REFERENCES "tenants"("id"),
+    "enabled"       SMALLINT NOT NULL DEFAULT 0,
+    "provider"      VARCHAR(32) NOT NULL DEFAULT 'aliyun',
+    "access_key"    VARCHAR(128) NOT NULL DEFAULT '',
+    "access_secret" VARCHAR(256) NOT NULL DEFAULT '',
+    "sign_name"     VARCHAR(64) NOT NULL DEFAULT '',
+    "region"        VARCHAR(32) NOT NULL DEFAULT '',
+    "remark"        VARCHAR(500) NOT NULL DEFAULT '',
+    "updated_at"    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS "sms_templates" (
+    "id"          BIGSERIAL PRIMARY KEY,
+    "tenant_id"   BIGINT NOT NULL,
+    "code"        VARCHAR(64) NOT NULL,
+    "name"        VARCHAR(100) NOT NULL,
+    "template_id" VARCHAR(64) NOT NULL DEFAULT '',
+    "content"     VARCHAR(500) NOT NULL DEFAULT '',
+    "enabled"     SMALLINT NOT NULL DEFAULT 1,
+    "created_at"  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at"  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "uk_sms_templates_tenant_code" ON "sms_templates" ("tenant_id", "code");
+
+CREATE TABLE IF NOT EXISTS "sms_logs" (
+    "id"          BIGSERIAL PRIMARY KEY,
+    "tenant_id"   BIGINT NOT NULL,
+    "phone"       VARCHAR(20) NOT NULL,
+    "code"        VARCHAR(64) NOT NULL,
+    "content"     VARCHAR(500) NOT NULL DEFAULT '',
+    "status"      SMALLINT NOT NULL DEFAULT 1,
+    "error"       VARCHAR(500) NOT NULL DEFAULT '',
+    "biz_id"      VARCHAR(64) NOT NULL DEFAULT '',
+    "created_at"  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS "idx_sms_logs_tenant" ON "sms_logs" ("tenant_id");
+CREATE INDEX IF NOT EXISTS "idx_sms_logs_phone" ON "sms_logs" ("tenant_id", "phone");
+
+CREATE TABLE IF NOT EXISTS "distribution_settings" (
+    "tenant_id"     BIGINT PRIMARY KEY REFERENCES "tenants"("id"),
+    "enabled"       SMALLINT NOT NULL DEFAULT 1,
+    "level1_rate"   NUMERIC(5,4) NOT NULL DEFAULT 0.10,
+    "level2_rate"   NUMERIC(5,4) NOT NULL DEFAULT 0.05,
+    "min_withdraw"  NUMERIC(10,2) NOT NULL DEFAULT 10,
+    "auto_become"   SMALLINT NOT NULL DEFAULT 0,
+    "remark"        VARCHAR(500) NOT NULL DEFAULT '',
+    "updated_at"    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS "distributors" (
+    "id"                   BIGSERIAL PRIMARY KEY,
+    "tenant_id"            BIGINT NOT NULL,
+    "member_id"            BIGINT NOT NULL,
+    "parent_id"            BIGINT NOT NULL DEFAULT 0,
+    "grandparent_id"       BIGINT NOT NULL DEFAULT 0,
+    "status"               SMALLINT NOT NULL DEFAULT 0,
+    "total_commission"     NUMERIC(12,2) NOT NULL DEFAULT 0,
+    "pending_commission"   NUMERIC(12,2) NOT NULL DEFAULT 0,
+    "withdrawn"            NUMERIC(12,2) NOT NULL DEFAULT 0,
+    "invite_count"         INT NOT NULL DEFAULT 0,
+    "created_at"           TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "approved_at"          TIMESTAMP
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "uk_distributors_tenant_member" ON "distributors" ("tenant_id", "member_id");
+CREATE INDEX IF NOT EXISTS "idx_distributors_parent" ON "distributors" ("tenant_id", "parent_id");
+CREATE INDEX IF NOT EXISTS "idx_distributors_status" ON "distributors" ("tenant_id", "status");
+
+CREATE TABLE IF NOT EXISTS "commission_logs" (
+    "id"             BIGSERIAL PRIMARY KEY,
+    "tenant_id"      BIGINT NOT NULL,
+    "distributor_id" BIGINT NOT NULL,
+    "member_id"      BIGINT NOT NULL,
+    "order_id"       BIGINT NOT NULL,
+    "order_no"       VARCHAR(64) NOT NULL,
+    "buyer_id"       BIGINT NOT NULL,
+    "level"          SMALLINT NOT NULL,
+    "amount"         NUMERIC(12,2) NOT NULL,
+    "rate"           NUMERIC(5,4) NOT NULL,
+    "status"         SMALLINT NOT NULL DEFAULT 1,
+    "settled_at"     TIMESTAMP,
+    "created_at"     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS "idx_commission_logs_tenant" ON "commission_logs" ("tenant_id");
+CREATE INDEX IF NOT EXISTS "idx_commission_logs_distributor" ON "commission_logs" ("tenant_id", "distributor_id");
+CREATE INDEX IF NOT EXISTS "idx_commission_logs_order" ON "commission_logs" ("tenant_id", "order_id");
+
+CREATE TABLE IF NOT EXISTS "groupon_activities" (
+    "id"             BIGSERIAL PRIMARY KEY,
+    "tenant_id"      BIGINT NOT NULL,
+    "name"           VARCHAR(100) NOT NULL,
+    "product_id"     BIGINT NOT NULL,
+    "sku_id"         BIGINT NOT NULL DEFAULT 0,
+    "group_price"    NUMERIC(10,2) NOT NULL,
+    "original_price" NUMERIC(10,2) NOT NULL,
+    "require_num"    INT NOT NULL DEFAULT 2,
+    "expire_hours"   INT NOT NULL DEFAULT 24,
+    "total_stock"    INT NOT NULL DEFAULT 0,
+    "sold_count"     INT NOT NULL DEFAULT 0,
+    "start_at"       TIMESTAMP NOT NULL,
+    "end_at"         TIMESTAMP NOT NULL,
+    "status"         SMALLINT NOT NULL DEFAULT 1,
+    "created_at"     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS "idx_groupon_activities_tenant" ON "groupon_activities" ("tenant_id");
+CREATE INDEX IF NOT EXISTS "idx_groupon_activities_status" ON "groupon_activities" ("tenant_id", "status");
+
+CREATE TABLE IF NOT EXISTS "groupons" (
+    "id"              BIGSERIAL PRIMARY KEY,
+    "tenant_id"       BIGINT NOT NULL,
+    "activity_id"     BIGINT NOT NULL,
+    "leader_id"       BIGINT NOT NULL,
+    "require_num"     INT NOT NULL,
+    "current_num"     INT NOT NULL DEFAULT 1,
+    "status"          SMALLINT NOT NULL DEFAULT 1,
+    "expires_at"      TIMESTAMP NOT NULL,
+    "succeed_at"      TIMESTAMP,
+    "created_at"      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS "idx_groupons_tenant_activity" ON "groupons" ("tenant_id", "activity_id");
+CREATE INDEX IF NOT EXISTS "idx_groupons_status" ON "groupons" ("tenant_id", "status");
+
+CREATE TABLE IF NOT EXISTS "groupon_members" (
+    "id"          BIGSERIAL PRIMARY KEY,
+    "tenant_id"   BIGINT NOT NULL,
+    "groupon_id"  BIGINT NOT NULL,
+    "member_id"   BIGINT NOT NULL,
+    "order_id"    BIGINT NOT NULL DEFAULT 0,
+    "is_leader"   SMALLINT NOT NULL DEFAULT 0,
+    "joined_at"   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS "idx_groupon_members_groupon" ON "groupon_members" ("tenant_id", "groupon_id");
+CREATE INDEX IF NOT EXISTS "idx_groupon_members_member" ON "groupon_members" ("tenant_id", "member_id");
+
+CREATE TABLE IF NOT EXISTS "api_tokens" (
+    "id"           BIGSERIAL PRIMARY KEY,
+    "tenant_id"    BIGINT NOT NULL,
+    "name"         VARCHAR(100) NOT NULL,
+    "app_key"      VARCHAR(64) NOT NULL,
+    "app_secret"   VARCHAR(128) NOT NULL,
+    "scopes"       VARCHAR(500) NOT NULL DEFAULT '',
+    "ip_whitelist" VARCHAR(500) NOT NULL DEFAULT '',
+    "status"       SMALLINT NOT NULL DEFAULT 1,
+    "last_used_at" TIMESTAMP NULL,
+    "expires_at"   TIMESTAMP NULL,
+    "created_at"   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at"   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "uk_api_tokens_app_key" ON "api_tokens" ("app_key");
+CREATE INDEX IF NOT EXISTS "idx_api_tokens_tenant" ON "api_tokens" ("tenant_id");
+
+CREATE TABLE IF NOT EXISTS "api_request_logs" (
+    "id"          BIGSERIAL PRIMARY KEY,
+    "tenant_id"   BIGINT NOT NULL,
+    "token_id"    BIGINT NOT NULL,
+    "app_key"     VARCHAR(64) NOT NULL,
+    "method"      VARCHAR(10) NOT NULL,
+    "path"        VARCHAR(255) NOT NULL,
+    "status_code" INT NOT NULL DEFAULT 0,
+    "ip"          VARCHAR(64) NOT NULL DEFAULT '',
+    "cost_ms"     INT NOT NULL DEFAULT 0,
+    "created_at"  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS "idx_api_logs_tenant" ON "api_request_logs" ("tenant_id");
+CREATE INDEX IF NOT EXISTS "idx_api_logs_token" ON "api_request_logs" ("token_id");

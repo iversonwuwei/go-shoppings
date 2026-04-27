@@ -27,8 +27,12 @@ func (r *TenantRepo) FindByID(ctx context.Context, id uint64) (*model.Tenant, er
 }
 
 func (r *TenantRepo) FindByCode(ctx context.Context, code string) (*model.Tenant, error) {
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return nil, nil
+	}
 	var t model.Tenant
-	if err := r.db.WithContext(ctx).Where("code = ?", code).First(&t).Error; err != nil {
+	if err := r.db.WithContext(ctx).Where("LOWER(code) = LOWER(?)", code).First(&t).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}

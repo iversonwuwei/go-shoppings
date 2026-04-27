@@ -61,3 +61,50 @@ INSERT INTO "tenants" (
     '#1677ff',
     1
 );
+
+-- ----------------------------
+-- 插入测试租户管理员（商户登录：TEST001 / smokeadmin22 / admin123）
+-- ----------------------------
+INSERT INTO "admins" (
+    "tenant_id", "username", "password", "real_name", "phone", "email", "role", "status"
+)
+SELECT t.id,
+       'smokeadmin22',
+    '$2a$10$.laeckOx4u7cZPzuSihBReyLGYuM65e7qhw9I3gshd6GWMs6EXD/C',
+       '演示商户管理员',
+       '13900000001',
+       'smokeadmin22@example.com',
+       'admin',
+       1
+FROM "tenants" t
+WHERE t.code = 'TEST001'
+ON CONFLICT ("username") DO UPDATE SET
+    "tenant_id" = EXCLUDED."tenant_id",
+    "password" = EXCLUDED."password",
+    "real_name" = EXCLUDED."real_name",
+    "phone" = EXCLUDED."phone",
+    "email" = EXCLUDED."email",
+    "role" = EXCLUDED."role",
+    "status" = EXCLUDED."status",
+    "updated_at" = CURRENT_TIMESTAMP;
+
+-- ----------------------------
+-- 插入平台统一商品分类（tenant_id=0，所有租户共享）
+-- ----------------------------
+INSERT INTO "product_categories" ("tenant_id", "parent_id", "name", "sort", "status")
+SELECT 0, 0, v.name, v.sort, 1
+FROM (VALUES
+    ('食品饮料', 100),
+    ('美妆护肤', 90),
+    ('数码家电', 80),
+    ('服饰鞋包', 70),
+    ('家居日用', 60),
+    ('母婴玩具', 50),
+    ('图书文娱', 40),
+    ('运动户外', 30),
+    ('虚拟服务', 20),
+    ('其他', 10)
+) AS v(name, sort)
+WHERE NOT EXISTS (
+    SELECT 1 FROM "product_categories" pc WHERE pc.tenant_id = 0 AND pc.name = v.name
+);
