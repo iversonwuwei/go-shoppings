@@ -18,6 +18,7 @@ func NewProductRepo(db *gorm.DB) *ProductRepo { return &ProductRepo{db: db} }
 type ProductListQuery struct {
 	CategoryID  uint64
 	Keyword     string
+	StockStatus string
 	Status      *int8
 	IsRecommend *int8
 	IsHot       *int8
@@ -42,6 +43,14 @@ func (r *ProductRepo) List(ctx context.Context, q ProductListQuery) ([]model.Pro
 	}
 	if q.Keyword != "" {
 		tx = tx.Where("name ILIKE ?", "%"+q.Keyword+"%")
+	}
+	switch q.StockStatus {
+	case "out":
+		tx = tx.Where("is_virtual = 0 AND stock <= 0")
+	case "low":
+		tx = tx.Where("is_virtual = 0 AND stock > 0 AND stock <= stock_warning")
+	case "normal":
+		tx = tx.Where("is_virtual = 0 AND stock > stock_warning")
 	}
 	var total int64
 	if err := tx.Count(&total).Error; err != nil {
@@ -194,7 +203,9 @@ func (r *CategoryRepo) Delete(ctx context.Context, id uint64) error {
 
 type TenantCategoryAssetRepo struct{ db *gorm.DB }
 
-func NewTenantCategoryAssetRepo(db *gorm.DB) *TenantCategoryAssetRepo { return &TenantCategoryAssetRepo{db: db} }
+func NewTenantCategoryAssetRepo(db *gorm.DB) *TenantCategoryAssetRepo {
+	return &TenantCategoryAssetRepo{db: db}
+}
 
 func (r *TenantCategoryAssetRepo) ListByTenant(ctx context.Context, tenantID uint64) ([]model.TenantCategoryAsset, error) {
 	var rows []model.TenantCategoryAsset

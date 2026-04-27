@@ -293,6 +293,8 @@ func New(d *Deps) *gin.Engine {
 		adAuth.PATCH("/products/:id/status", d.AdminProductH.UpdateStatus)
 		adAuth.DELETE("/products/:id", d.AdminProductH.Delete)
 		adAuth.POST("/products/:id/skus", middleware.RequireFeature(service.FeatureMultiSKU), d.AdminProductH.CreateSKU)
+		adAuth.GET("/inventory/products", d.AdminProductH.InventoryList)
+		adAuth.PATCH("/inventory/products/:id", d.AdminProductH.AdjustInventory)
 
 		adAuth.GET("/categories", d.AdminCategoryH.List)
 		adAuth.PUT("/categories/:id/media", d.AdminCategoryH.UpdateTenantAsset)

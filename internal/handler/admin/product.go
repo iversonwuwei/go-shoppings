@@ -38,6 +38,38 @@ func (h *ProductHandler) List(c *gin.Context) {
 	response.OK(c, gin.H{"list": rows, "total": total, "page": page, "size": size})
 }
 
+func (h *ProductHandler) InventoryList(c *gin.Context) {
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	size, _ := strconv.Atoi(c.DefaultQuery("size", "20"))
+	q := repository.ProductListQuery{
+		Keyword:     c.Query("keyword"),
+		StockStatus: c.Query("stock_status"),
+		Page:        page,
+		Size:        size,
+	}
+	rows, total, err := h.svc.ListInventory(c.Request.Context(), q)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, gin.H{"list": rows, "total": total, "page": page, "size": size})
+}
+
+func (h *ProductHandler) AdjustInventory(c *gin.Context) {
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+	var req service.InventoryAdjustInput
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.FailCode(c, 20001, err.Error())
+		return
+	}
+	result, err := h.svc.AdjustInventory(c.Request.Context(), id, req)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, result)
+}
+
 func (h *ProductHandler) Create(c *gin.Context) {
 	var p model.Product
 	if err := c.ShouldBindJSON(&p); err != nil {
@@ -114,7 +146,7 @@ func (h *ProductHandler) ImportTemplate(c *gin.Context) {
 	writer := csv.NewWriter(c.Writer)
 	_ = writer.Write([]string{
 		"商品名称", "副标题", "分类名称", "封面图", "商品图集", "视频地址", "商品详情",
-		"价格", "库存", "预警库存", "是否虚拟商品", "配送方式", "运费", "是否上架", "是否推荐", "是否热门", "排序值",
+		"价格", "是否虚拟商品", "配送方式", "运费", "是否上架", "是否推荐", "是否热门", "排序值",
 	})
 	writer.Flush()
 }

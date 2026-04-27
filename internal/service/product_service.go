@@ -8,6 +8,7 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/shopspring/decimal"
 
@@ -35,6 +36,24 @@ type ProductImportError struct {
 type ProductImportResult struct {
 	Imported int                  `json:"imported"`
 	Errors   []ProductImportError `json:"errors"`
+}
+
+type InventoryAdjustInput struct {
+	ChangeType   string `json:"change_type"`
+	Quantity     int    `json:"quantity"`
+	StockWarning *int   `json:"stock_warning"`
+	Remark       string `json:"remark"`
+}
+
+type InventoryAdjustResult struct {
+	Product       *model.Product `json:"product"`
+	ChangeType    string         `json:"change_type"`
+	Quantity      int            `json:"quantity"`
+	BeforeStock   int            `json:"before_stock"`
+	AfterStock    int            `json:"after_stock"`
+	BeforeWarning int            `json:"before_warning"`
+	AfterWarning  int            `json:"after_warning"`
+	Remark        string         `json:"remark"`
 }
 
 func (s *ProductService) List(ctx context.Context, q repository.ProductListQuery) ([]model.Product, int64, error) {
@@ -88,6 +107,12 @@ func (s *ProductService) Create(ctx context.Context, p *model.Product) error {
 			return err
 		}
 	}
+	p.Stock = 0
+	if p.IsVirtual == 1 {
+		p.StockWarning = 0
+	} else {
+		p.StockWarning = 10
+	}
 	return s.products.Create(ctx, p)
 }
 
@@ -103,7 +128,139 @@ func (s *ProductService) Update(ctx context.Context, p *model.Product) error {
 			return err
 		}
 	}
-	return s.products.Update(ctx, p)
+	if p.ID == 0 {
+		return apperr.ErrParamInvalid
+	}
+	current, err := s.products.FindByID(ctx, p.ID)
+	if err != nil {
+		return err
+	}
+	if current == nil {
+		return apperr.ErrNotFound
+	}
+	fields := map[string]interface{}{
+		"category_id":     p.CategoryID,
+		"name":            p.Name,
+		"subtitle":        p.Subtitle,
+		"cover_image":     p.CoverImage,
+		"images":          p.Images,
+		"video_url":       p.VideoURL,
+		"description":     p.Description,
+		"price":           p.Price,
+		"cost_price":      p.CostPrice,
+		"has_sku":         p.HasSKU,
+		"is_virtual":      p.IsVirtual,
+		"delivery_type":   p.DeliveryType,
+		"delivery_fee":    p.DeliveryFee,
+		"status":          p.Status,
+		"is_recommend":    p.IsRecommend,
+		"is_hot":          p.IsHot,
+		"seo_title":       p.SEOTitle,
+		"seo_keywords":    p.SEOKeywords,
+		"seo_description": p.SEODescription,
+		"sort":            p.Sort,
+		"updated_at":      time.Now(),
+	}
+	return s.products.UpdateFields(ctx, p.ID, fields)
+}
+
+func (s *ProductService) ListInventory(ctx context.Context, q repository.ProductListQuery) ([]model.Product, int64, error) {
+	if q.Page <= 0 {
+		q.Page = 1
+	}
+	if q.Size <= 0 || q.Size > 100 {
+		q.Size = 20
+	}
+	q.OrderBy = "stock ASC, id DESC"
+	return s.products.List(ctx, q)
+}
+
+func (s *ProductService) AdjustInventory(ctx context.Context, id uint64, input InventoryAdjustInput) (*InventoryAdjustResult, error) {
+	if repository.EnsureTenant(ctx) == 0 {
+		return nil, apperr.ErrTenantRequired
+	}
+	if id == 0 {
+		return nil, apperr.ErrParamInvalid
+	}
+	p, err := s.products.FindByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if p == nil {
+		return nil, apperr.ErrNotFound
+	}
+	if p.IsVirtual == 1 {
+		return nil, apperr.New(20001, "虚拟商品无需库存管理")
+	}
+
+	changeType := strings.ToLower(strings.TrimSpace(input.ChangeType))
+	if changeType == "" {
+		changeType = "set"
+	}
+	beforeStock := p.Stock
+	afterStock := beforeStock
+	switch changeType {
+	case "in", "increase":
+		if input.Quantity <= 0 {
+			return nil, apperr.New(20001, "入库数量必须大于 0")
+		}
+		afterStock = beforeStock + input.Quantity
+		changeType = "in"
+	case "out", "decrease":
+		if input.Quantity <= 0 {
+			return nil, apperr.New(20001, "出库数量必须大于 0")
+		}
+		if input.Quantity > beforeStock {
+			return nil, apperr.ErrStockShortage
+		}
+		afterStock = beforeStock - input.Quantity
+		changeType = "out"
+	case "set", "check":
+		if input.Quantity < 0 {
+			return nil, apperr.New(20001, "盘点库存不能小于 0")
+		}
+		afterStock = input.Quantity
+		changeType = "set"
+	case "warning":
+		changeType = "warning"
+	default:
+		return nil, apperr.New(20001, "库存调整类型不正确")
+	}
+
+	beforeWarning := p.StockWarning
+	afterWarning := beforeWarning
+	fields := map[string]interface{}{
+		"updated_at": time.Now(),
+	}
+	if changeType != "warning" {
+		fields["stock"] = afterStock
+	}
+	if input.StockWarning != nil {
+		if *input.StockWarning < 0 {
+			return nil, apperr.New(20001, "预警库存不能小于 0")
+		}
+		afterWarning = *input.StockWarning
+		fields["stock_warning"] = afterWarning
+	}
+	if len(fields) == 1 {
+		return nil, apperr.New(20001, "没有可保存的库存变更")
+	}
+	if err := s.products.UpdateFields(ctx, id, fields); err != nil {
+		return nil, err
+	}
+	p.Stock = afterStock
+	p.StockWarning = afterWarning
+	p.UpdatedAt = time.Now()
+	return &InventoryAdjustResult{
+		Product:       p,
+		ChangeType:    changeType,
+		Quantity:      input.Quantity,
+		BeforeStock:   beforeStock,
+		AfterStock:    afterStock,
+		BeforeWarning: beforeWarning,
+		AfterWarning:  afterWarning,
+		Remark:        strings.TrimSpace(input.Remark),
+	}, nil
 }
 
 func (s *ProductService) UpdateStatus(ctx context.Context, id uint64, status int8) error {
@@ -193,14 +350,6 @@ func buildImportProduct(row []string, headerIndex map[string]int, categoryMap ma
 		return nil, err
 	}
 
-	stock, err := importInt(importCell(row, headerIndex, "库存", "stock"), 0, "库存")
-	if err != nil {
-		return nil, err
-	}
-	stockWarning, err := importInt(importCell(row, headerIndex, "预警库存", "stock_warning"), 10, "预警库存")
-	if err != nil {
-		return nil, err
-	}
 	sort, err := importInt(importCell(row, headerIndex, "排序值", "sort"), 0, "排序值")
 	if err != nil {
 		return nil, err
@@ -233,9 +382,9 @@ func buildImportProduct(row []string, headerIndex map[string]int, categoryMap ma
 	}
 
 	deliveryTypes := importList(importCell(row, headerIndex, "配送方式", "delivery_type"))
+	stockWarning := 10
 	if isVirtual == 1 {
 		deliveryTypes = nil
-		stock = 0
 		stockWarning = 0
 		deliveryFee = decimal.Zero
 	} else if len(deliveryTypes) == 0 {
@@ -251,7 +400,7 @@ func buildImportProduct(row []string, headerIndex map[string]int, categoryMap ma
 		VideoURL:     importCell(row, headerIndex, "视频地址", "video_url"),
 		Description:  importCell(row, headerIndex, "商品详情", "description"),
 		Price:        price,
-		Stock:        stock,
+		Stock:        0,
 		StockWarning: stockWarning,
 		IsVirtual:    int8(isVirtual),
 		DeliveryType: model.JSONB(deliveryTypes),
@@ -357,8 +506,8 @@ func importList(raw string) []string {
 // ===== Category =====
 
 type CategoryService struct {
-	repo   *repository.CategoryRepo
-	asset  *repository.TenantCategoryAssetRepo
+	repo  *repository.CategoryRepo
+	asset *repository.TenantCategoryAssetRepo
 }
 
 func NewCategoryService(r *repository.CategoryRepo, a *repository.TenantCategoryAssetRepo) *CategoryService {
