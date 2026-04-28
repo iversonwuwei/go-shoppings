@@ -19,20 +19,22 @@ type CouponHandler struct {
 func NewCouponHandler(r *repository.CouponRepo) *CouponHandler { return &CouponHandler{repo: r} }
 
 type couponReq struct {
-	Name            string           `json:"name" binding:"required,max=50"`
-	Type            string           `json:"type" binding:"required,oneof=cash discount shipping"`
-	ThresholdAmount *decimal.Decimal `json:"threshold_amount"`
-	DiscountValue   decimal.Decimal  `json:"discount_value" binding:"required"`
-	MaxDiscount     *decimal.Decimal `json:"max_discount"`
-	TotalCount      int              `json:"total_count" binding:"min=0"`
-	PerLimit        int              `json:"per_limit" binding:"min=1"`
-	ReceiveStartAt  *requestTime     `json:"receive_start_at"`
-	ReceiveEndAt    *requestTime     `json:"receive_end_at"`
-	ValidStartAt    *requestTime     `json:"valid_start_at"`
-	ValidEndAt      *requestTime     `json:"valid_end_at"`
-	ValidDays       int              `json:"valid_days"`
-	ApplicableType  string           `json:"applicable_type"`
-	Status          int8             `json:"status"`
+	Name             string           `json:"name" binding:"required,max=50"`
+	Type             string           `json:"type" binding:"required,oneof=cash discount shipping"`
+	ThresholdAmount  *decimal.Decimal `json:"threshold_amount"`
+	DiscountValue    decimal.Decimal  `json:"discount_value" binding:"required"`
+	MaxDiscount      *decimal.Decimal `json:"max_discount"`
+	ReceiveLimitType string           `json:"receive_limit_type"`
+	TotalCount       int              `json:"total_count" binding:"min=0"`
+	PerLimit         int              `json:"per_limit" binding:"min=0"`
+	UseLimit         int              `json:"use_limit" binding:"min=0"`
+	ReceiveStartAt   *requestTime     `json:"receive_start_at"`
+	ReceiveEndAt     *requestTime     `json:"receive_end_at"`
+	ValidStartAt     *requestTime     `json:"valid_start_at"`
+	ValidEndAt       *requestTime     `json:"valid_end_at"`
+	ValidDays        int              `json:"valid_days"`
+	ApplicableType   string           `json:"applicable_type"`
+	Status           int8             `json:"status"`
 }
 
 func (h *CouponHandler) List(c *gin.Context) {
@@ -50,22 +52,23 @@ func (h *CouponHandler) Create(c *gin.Context) {
 		response.FailCode(c, 20001, err.Error())
 		return
 	}
-	if req.PerLimit <= 0 {
-		req.PerLimit = 1
-	}
 	if req.ApplicableType == "" {
 		req.ApplicableType = "all"
 	}
+	receiveLimitType := defaultCouponReceiveLimitType(req.ReceiveLimitType)
+	totalCount, remainCount := couponCounts(receiveLimitType, req.TotalCount, req.TotalCount)
 	coupon := &model.Coupon{
 		Name: req.Name, Type: req.Type,
 		ThresholdAmount: req.ThresholdAmount, DiscountValue: req.DiscountValue, MaxDiscount: req.MaxDiscount,
-		TotalCount:     req.TotalCount,
-		RemainCount:    req.TotalCount,
-		PerLimit:       req.PerLimit,
-		ReceiveStartAt: requestTimePtr(req.ReceiveStartAt), ReceiveEndAt: requestTimePtr(req.ReceiveEndAt),
+		ReceiveLimitType: receiveLimitType,
+		TotalCount:       totalCount,
+		RemainCount:      remainCount,
+		PerLimit:         req.PerLimit,
+		UseLimit:         req.UseLimit,
+		ReceiveStartAt:   requestTimePtr(req.ReceiveStartAt), ReceiveEndAt: requestTimePtr(req.ReceiveEndAt),
 		ValidStartAt: requestTimePtr(req.ValidStartAt), ValidEndAt: requestTimePtr(req.ValidEndAt), ValidDays: req.ValidDays,
 		ApplicableType: req.ApplicableType,
-		Status:         defaultCouponStatus(req.Status),
+		Status:         couponStatus(req.Status),
 	}
 	if err := h.repo.Create(c.Request.Context(), coupon); err != nil {
 		response.Fail(c, err)
@@ -94,26 +97,36 @@ func (h *CouponHandler) Update(c *gin.Context) {
 		response.FailCode(c, 20001, err.Error())
 		return
 	}
+	receiveLimitType := defaultCouponReceiveLimitType(req.ReceiveLimitType)
 	fields := map[string]interface{}{
-		"name":             req.Name,
-		"type":             req.Type,
-		"threshold_amount": req.ThresholdAmount,
-		"discount_value":   req.DiscountValue,
-		"max_discount":     req.MaxDiscount,
-		"per_limit":        defaultInt(req.PerLimit, 1),
-		"receive_start_at": requestTimePtr(req.ReceiveStartAt),
-		"receive_end_at":   requestTimePtr(req.ReceiveEndAt),
-		"valid_start_at":   requestTimePtr(req.ValidStartAt),
-		"valid_end_at":     requestTimePtr(req.ValidEndAt),
-		"valid_days":       req.ValidDays,
-		"applicable_type":  defaultStr(req.ApplicableType, "all"),
-		"status":           defaultCouponStatus(req.Status),
+		"name":               req.Name,
+		"type":               req.Type,
+		"threshold_amount":   req.ThresholdAmount,
+		"discount_value":     req.DiscountValue,
+		"max_discount":       req.MaxDiscount,
+		"receive_limit_type": receiveLimitType,
+		"per_limit":          req.PerLimit,
+		"use_limit":          req.UseLimit,
+		"receive_start_at":   requestTimePtr(req.ReceiveStartAt),
+		"receive_end_at":     requestTimePtr(req.ReceiveEndAt),
+		"valid_start_at":     requestTimePtr(req.ValidStartAt),
+		"valid_end_at":       requestTimePtr(req.ValidEndAt),
+		"valid_days":         req.ValidDays,
+		"applicable_type":    defaultStr(req.ApplicableType, "all"),
+		"status":             couponStatus(req.Status),
 	}
-	// total_count 调整时同步 remain_count（已发放部分不退还）
-	if req.TotalCount != exist.TotalCount {
+	// total_count 调整时同步 remain_count（已发放部分不退还）；不限总发放时库存字段归零。
+	if receiveLimitType == model.CouponReceiveLimitUnlimited {
+		fields["total_count"] = 0
+		fields["remain_count"] = 0
+	} else if req.TotalCount != exist.TotalCount || exist.ReceiveLimitType == model.CouponReceiveLimitUnlimited {
 		delta := req.TotalCount - exist.TotalCount
 		fields["total_count"] = req.TotalCount
-		fields["remain_count"] = max0(exist.RemainCount + delta)
+		if exist.ReceiveLimitType == model.CouponReceiveLimitUnlimited {
+			fields["remain_count"] = req.TotalCount
+		} else {
+			fields["remain_count"] = max0(exist.RemainCount + delta)
+		}
 	}
 	if err := h.repo.Update(c.Request.Context(), id, fields); err != nil {
 		response.Fail(c, err)
@@ -135,6 +148,13 @@ func (h *CouponHandler) Delete(c *gin.Context) {
 	response.OK(c, gin.H{"id": id})
 }
 
+func couponStatus(v int8) int8 {
+	if v == 1 {
+		return 1
+	}
+	return 0
+}
+
 func defaultCouponStatus(v int8) int8 {
 	if v == 0 {
 		return 1
@@ -154,4 +174,18 @@ func max0(n int) int {
 		return 0
 	}
 	return n
+}
+
+func defaultCouponReceiveLimitType(v string) string {
+	if v == model.CouponReceiveLimitUnlimited {
+		return model.CouponReceiveLimitUnlimited
+	}
+	return model.CouponReceiveLimitLimited
+}
+
+func couponCounts(receiveLimitType string, totalCount, remainCount int) (int, int) {
+	if receiveLimitType == model.CouponReceiveLimitUnlimited {
+		return 0, 0
+	}
+	return max0(totalCount), max0(remainCount)
 }

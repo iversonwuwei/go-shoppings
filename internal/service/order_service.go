@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -16,16 +17,18 @@ import (
 )
 
 type OrderService struct {
-	orders   *repository.OrderRepo
-	logs     *repository.OrderLogRepo
-	messages *repository.OrderMessageRepo
-	products *repository.ProductRepo
-	skus     *repository.ProductSKURepo
-	tenants  *TenantService
+	orders        *repository.OrderRepo
+	logs          *repository.OrderLogRepo
+	messages      *repository.OrderMessageRepo
+	products      *repository.ProductRepo
+	skus          *repository.ProductSKURepo
+	coupons       *repository.CouponRepo
+	memberCoupons *repository.MemberCouponRepo
+	tenants       *TenantService
 }
 
-func NewOrderService(o *repository.OrderRepo, l *repository.OrderLogRepo, m *repository.OrderMessageRepo, p *repository.ProductRepo, s *repository.ProductSKURepo, t *TenantService) *OrderService {
-	return &OrderService{orders: o, logs: l, messages: m, products: p, skus: s, tenants: t}
+func NewOrderService(o *repository.OrderRepo, l *repository.OrderLogRepo, m *repository.OrderMessageRepo, p *repository.ProductRepo, s *repository.ProductSKURepo, c *repository.CouponRepo, mc *repository.MemberCouponRepo, t *TenantService) *OrderService {
+	return &OrderService{orders: o, logs: l, messages: m, products: p, skus: s, coupons: c, memberCoupons: mc, tenants: t}
 }
 
 type OrderCreateItem struct {
@@ -46,7 +49,14 @@ type OrderCreateInput struct {
 		Address  string `json:"address"`
 		Postcode string `json:"postcode"`
 	} `json:"receiver"`
-	BuyerRemark string `json:"buyer_remark"`
+	BuyerRemark    string `json:"buyer_remark"`
+	MemberCouponID uint64 `json:"member_coupon_id"`
+}
+
+type couponApplication struct {
+	MemberCouponID uint64
+	CouponID       uint64
+	DiscountAmount decimal.Decimal
 }
 
 type orderTransitionInput struct {
@@ -203,12 +213,29 @@ func (s *OrderService) Create(ctx context.Context, memberID uint64, in *OrderCre
 		})
 	}
 
+	appliedCoupon, err := s.applyMemberCoupon(ctx, memberID, in.MemberCouponID, totalAmount)
+	if err != nil {
+		return nil, err
+	}
+	discountAmount := decimal.Zero
+	couponID := uint64(0)
+	if appliedCoupon != nil {
+		discountAmount = appliedCoupon.DiscountAmount
+		couponID = appliedCoupon.CouponID
+	}
+	actualAmount := totalAmount.Sub(discountAmount)
+	if actualAmount.IsNegative() {
+		actualAmount = decimal.Zero
+	}
+
 	order := &model.Order{
 		TenantID:         tenantID,
 		OrderNo:          utils.OrderNo("O"),
 		MemberID:         memberID,
 		TotalAmount:      totalAmount,
-		ActualAmount:     totalAmount,
+		DiscountAmount:   discountAmount,
+		CouponID:         couponID,
+		ActualAmount:     actualAmount,
 		Status:           model.OrderStatusPendingPay,
 		DeliveryType:     in.DeliveryType,
 		ReceiverName:     in.Receiver.Name,
@@ -240,6 +267,14 @@ func (s *OrderService) Create(ctx context.Context, memberID uint64, in *OrderCre
 				}
 			}
 		}
+		if appliedCoupon != nil {
+			if err := s.memberCoupons.MarkUsed(ctx, tx, appliedCoupon.MemberCouponID, memberID, order.ID); err != nil {
+				if errors.Is(err, repository.ErrCouponUseLimitReached) {
+					return apperr.New(30026, "已达到该优惠券使用次数限制")
+				}
+				return apperr.New(30025, "优惠券已被使用或不可用")
+			}
+		}
 		return nil
 	})
 	if err != nil {
@@ -259,6 +294,82 @@ func (s *OrderService) Create(ctx context.Context, memberID uint64, in *OrderCre
 		})
 	}
 	return order, nil
+}
+
+func (s *OrderService) applyMemberCoupon(ctx context.Context, memberID, memberCouponID uint64, totalAmount decimal.Decimal) (*couponApplication, error) {
+	if memberCouponID == 0 {
+		return nil, nil
+	}
+	if s.memberCoupons == nil || s.coupons == nil {
+		return nil, apperr.New(30023, "优惠券服务不可用")
+	}
+	memberCoupon, err := s.memberCoupons.FindByIDForMember(ctx, memberID, memberCouponID)
+	if err != nil {
+		return nil, err
+	}
+	if memberCoupon == nil || memberCoupon.Status != "unused" {
+		return nil, apperr.New(30024, "优惠券不可用")
+	}
+	now := time.Now()
+	if now.Before(memberCoupon.ValidStartAt) || now.After(memberCoupon.ValidEndAt) {
+		return nil, apperr.New(30024, "优惠券不在有效期内")
+	}
+	if memberCoupon.ThresholdAmount != nil && totalAmount.LessThan(*memberCoupon.ThresholdAmount) {
+		return nil, apperr.New(30024, "订单金额未达到优惠券使用门槛")
+	}
+	coupon, err := s.coupons.FindByID(ctx, memberCoupon.CouponID)
+	if err != nil {
+		return nil, err
+	}
+	if coupon == nil || coupon.Status != 1 {
+		return nil, apperr.New(30024, "优惠券不可用")
+	}
+	if memberCoupon.UseLimit > 0 {
+		usedCount, err := s.memberCoupons.CountUsedByMemberCoupon(ctx, memberID, coupon.ID)
+		if err != nil {
+			return nil, err
+		}
+		if usedCount >= int64(memberCoupon.UseLimit) {
+			return nil, apperr.New(30026, "已达到该优惠券使用次数限制")
+		}
+	}
+	discountAmount := calcCouponDiscount(memberCoupon, totalAmount)
+	return &couponApplication{MemberCouponID: memberCoupon.ID, CouponID: memberCoupon.CouponID, DiscountAmount: discountAmount}, nil
+}
+
+func calcCouponDiscount(coupon *model.MemberCoupon, totalAmount decimal.Decimal) decimal.Decimal {
+	if coupon == nil || totalAmount.LessThanOrEqual(decimal.Zero) {
+		return decimal.Zero
+	}
+	discountAmount := decimal.Zero
+	switch coupon.CouponType {
+	case model.CouponTypeCash:
+		discountAmount = coupon.DiscountValue
+	case model.CouponTypeDiscount:
+		rate := coupon.DiscountValue
+		if rate.GreaterThan(decimal.NewFromInt(1)) {
+			rate = rate.Div(decimal.NewFromInt(100))
+		}
+		if rate.LessThan(decimal.Zero) {
+			rate = decimal.Zero
+		}
+		if rate.GreaterThan(decimal.NewFromInt(1)) {
+			rate = decimal.NewFromInt(1)
+		}
+		discountAmount = totalAmount.Mul(decimal.NewFromInt(1).Sub(rate))
+		if coupon.MaxDiscount != nil && coupon.MaxDiscount.GreaterThan(decimal.Zero) && discountAmount.GreaterThan(*coupon.MaxDiscount) {
+			discountAmount = *coupon.MaxDiscount
+		}
+	case model.CouponTypeShipping:
+		discountAmount = decimal.Zero
+	}
+	if discountAmount.IsNegative() {
+		return decimal.Zero
+	}
+	if discountAmount.GreaterThan(totalAmount) {
+		return totalAmount
+	}
+	return discountAmount.Round(2)
 }
 
 func (s *OrderService) Detail(ctx context.Context, id uint64) (*model.Order, error) {

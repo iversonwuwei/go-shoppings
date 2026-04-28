@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"wechat-mall-saas/internal/pkg/ctxkeys"
 	apperr "wechat-mall-saas/internal/pkg/errors"
 	"wechat-mall-saas/internal/pkg/response"
 	"wechat-mall-saas/internal/repository"
@@ -106,4 +107,81 @@ func (h *MemberHandler) UpdateLevel(c *gin.Context) {
 		return
 	}
 	response.OK(c, nil)
+}
+
+func (h *MemberHandler) AdjustPoints(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		response.Fail(c, apperr.ErrParamInvalid)
+		return
+	}
+	var body struct {
+		ChangeValue int    `json:"change_value" binding:"required"`
+		SourceDesc  string `json:"source_desc"`
+		Remark      string `json:"remark"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		response.FailCode(c, 20001, err.Error())
+		return
+	}
+	var operatorID uint64
+	if admin := ctxkeys.GetAdmin(c.Request.Context()); admin != nil {
+		operatorID = admin.ID
+	}
+	log, err := h.svc.AdminAdjustPoints(c.Request.Context(), id, body.ChangeValue, body.SourceDesc, body.Remark, operatorID)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, log)
+}
+
+func (h *MemberHandler) GrantCoupon(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		response.Fail(c, apperr.ErrParamInvalid)
+		return
+	}
+	var body struct {
+		CouponID uint64 `json:"coupon_id" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		response.FailCode(c, 20001, err.Error())
+		return
+	}
+	var operatorID uint64
+	if admin := ctxkeys.GetAdmin(c.Request.Context()); admin != nil {
+		operatorID = admin.ID
+	}
+	memberCoupon, err := h.svc.AdminGrantCoupon(c.Request.Context(), id, body.CouponID, operatorID)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, memberCoupon)
+}
+
+func (h *MemberHandler) UpdateCouponStatus(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		response.Fail(c, apperr.ErrParamInvalid)
+		return
+	}
+	memberCouponID, err := strconv.ParseUint(c.Param("member_coupon_id"), 10, 64)
+	if err != nil {
+		response.Fail(c, apperr.ErrParamInvalid)
+		return
+	}
+	var body struct {
+		Status string `json:"status" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		response.FailCode(c, 20001, err.Error())
+		return
+	}
+	if err := h.svc.AdminUpdateMemberCouponStatus(c.Request.Context(), id, memberCouponID, body.Status); err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, gin.H{"id": memberCouponID})
 }

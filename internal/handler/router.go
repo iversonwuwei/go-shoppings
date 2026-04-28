@@ -318,6 +318,9 @@ func New(d *Deps) *gin.Engine {
 		adAuth.GET("/members/:id", d.AdminMemberH.Detail)
 		adAuth.PATCH("/members/:id/status", d.AdminMemberH.UpdateStatus)
 		adAuth.PATCH("/members/:id/level", middleware.RequireFeature(service.FeatureMemberLevel), d.AdminMemberH.UpdateLevel)
+		adAuth.POST("/members/:id/points/adjust", middleware.RequireFeature(service.FeaturePoints), d.AdminMemberH.AdjustPoints)
+		adAuth.POST("/members/:id/coupons", middleware.RequireFeature(service.FeatureCoupon), d.AdminMemberH.GrantCoupon)
+		adAuth.PATCH("/members/:id/coupons/:member_coupon_id/status", middleware.RequireFeature(service.FeatureCoupon), d.AdminMemberH.UpdateCouponStatus)
 
 		adAuth.GET("/settings/payment", d.AdminSettingsH.ListPayment)
 		adAuth.PUT("/settings/payment", d.AdminSettingsH.SubmitPayment)

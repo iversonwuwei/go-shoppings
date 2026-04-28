@@ -2,7 +2,11 @@ package service
 
 import (
 	"context"
+	"strings"
 	"time"
+
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"wechat-mall-saas/internal/model"
 	apperr "wechat-mall-saas/internal/pkg/errors"
@@ -10,14 +14,16 @@ import (
 )
 
 type MemberService struct {
-	members   *repository.MemberRepo
-	addresses *repository.MemberAddressRepo
-	points    *repository.PointsLogRepo
-	levels    *repository.MemberLevelRepo
+	members       *repository.MemberRepo
+	addresses     *repository.MemberAddressRepo
+	points        *repository.PointsLogRepo
+	levels        *repository.MemberLevelRepo
+	coupons       *repository.CouponRepo
+	memberCoupons *repository.MemberCouponRepo
 }
 
-func NewMemberService(m *repository.MemberRepo, a *repository.MemberAddressRepo, p *repository.PointsLogRepo, l *repository.MemberLevelRepo) *MemberService {
-	return &MemberService{members: m, addresses: a, points: p, levels: l}
+func NewMemberService(m *repository.MemberRepo, a *repository.MemberAddressRepo, p *repository.PointsLogRepo, l *repository.MemberLevelRepo, c *repository.CouponRepo, mc *repository.MemberCouponRepo) *MemberService {
+	return &MemberService{members: m, addresses: a, points: p, levels: l, coupons: c, memberCoupons: mc}
 }
 
 type AdminMemberItem struct {
@@ -49,6 +55,7 @@ type AdminMemberDetail struct {
 	Member     AdminMemberItem       `json:"member"`
 	Addresses  []model.MemberAddress `json:"addresses"`
 	PointsLogs []model.PointsLog     `json:"points_logs"`
+	Coupons    []model.MemberCoupon  `json:"coupons"`
 }
 
 func (s *MemberService) Profile(ctx context.Context, id uint64) (*model.Member, error) {
@@ -136,11 +143,144 @@ func (s *MemberService) AdminDetail(ctx context.Context, id uint64) (*AdminMembe
 	if err != nil {
 		return nil, err
 	}
+	coupons := []model.MemberCoupon{}
+	if s.memberCoupons != nil {
+		coupons, err = s.memberCoupons.ListByMember(ctx, id, "")
+		if err != nil {
+			return nil, err
+		}
+	}
 	return &AdminMemberDetail{
 		Member:     adminMemberItem(*m, levelMap),
 		Addresses:  addresses,
 		PointsLogs: points,
+		Coupons:    coupons,
 	}, nil
+}
+
+func (s *MemberService) AdminAdjustPoints(ctx context.Context, id uint64, changeValue int, sourceDesc, remark string, operatorID uint64) (*model.PointsLog, error) {
+	if changeValue == 0 {
+		return nil, apperr.ErrParamInvalid
+	}
+	if strings.TrimSpace(sourceDesc) == "" {
+		sourceDesc = "后台调整"
+	}
+	var log *model.PointsLog
+	err := s.members.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var member model.Member
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND tenant_id = ?", id, repository.EnsureTenant(ctx)).First(&member).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				return apperr.ErrNotFound
+			}
+			return err
+		}
+		before := member.Points
+		after := before + changeValue
+		if after < 0 {
+			return apperr.New(30027, "会员积分余额不足")
+		}
+		if err := tx.Model(&model.Member{}).
+			Where("id = ? AND tenant_id = ?", member.ID, member.TenantID).
+			Updates(map[string]interface{}{"points": after, "updated_at": time.Now()}).Error; err != nil {
+			return err
+		}
+		changeType := "admin_add"
+		if changeValue < 0 {
+			changeType = "admin_deduct"
+		}
+		log = &model.PointsLog{
+			TenantID:      member.TenantID,
+			MemberID:      member.ID,
+			ChangeType:    changeType,
+			ChangeValue:   changeValue,
+			BalanceBefore: before,
+			BalanceAfter:  after,
+			SourceDesc:    strings.TrimSpace(sourceDesc),
+			Remark:        strings.TrimSpace(remark),
+			OperatorID:    operatorID,
+		}
+		return tx.Create(log).Error
+	})
+	return log, err
+}
+
+func (s *MemberService) AdminGrantCoupon(ctx context.Context, memberID, couponID, operatorID uint64) (*model.MemberCoupon, error) {
+	member, err := s.members.FindByID(ctx, memberID)
+	if err != nil {
+		return nil, err
+	}
+	if member == nil {
+		return nil, apperr.ErrNotFound
+	}
+	if s.coupons == nil || s.memberCoupons == nil {
+		return nil, apperr.New(30023, "优惠券服务不可用")
+	}
+	now := time.Now()
+	var memberCoupon *model.MemberCoupon
+	err = s.coupons.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		coupon, err := s.coupons.FindByIDForUpdate(ctx, tx, couponID)
+		if err != nil {
+			return err
+		}
+		if coupon == nil || coupon.Status != 1 {
+			return apperr.New(30024, "优惠券不可发放")
+		}
+		validStart := now
+		validEnd := now.AddDate(0, 0, 30)
+		if coupon.ValidStartAt != nil {
+			validStart = *coupon.ValidStartAt
+		}
+		if coupon.ValidEndAt != nil {
+			validEnd = *coupon.ValidEndAt
+		} else if coupon.ValidDays > 0 {
+			validEnd = now.AddDate(0, 0, coupon.ValidDays)
+		}
+		memberCoupon = &model.MemberCoupon{
+			TenantID:        member.TenantID,
+			MemberID:        member.ID,
+			CouponID:        coupon.ID,
+			CouponName:      coupon.Name,
+			CouponType:      coupon.Type,
+			ThresholdAmount: coupon.ThresholdAmount,
+			DiscountValue:   coupon.DiscountValue,
+			MaxDiscount:     coupon.MaxDiscount,
+			UseLimit:        coupon.UseLimit,
+			ReceivedAt:      now,
+			ValidStartAt:    validStart,
+			ValidEndAt:      validEnd,
+			Status:          "unused",
+		}
+		if coupon.ReceiveLimitType != model.CouponReceiveLimitUnlimited {
+			if err := s.coupons.DecreaseRemain(ctx, tx, coupon.ID); err != nil {
+				return apperr.New(30021, "优惠券已发完")
+			}
+		}
+		return tx.Create(memberCoupon).Error
+	})
+	return memberCoupon, err
+}
+
+func (s *MemberService) AdminUpdateMemberCouponStatus(ctx context.Context, memberID, memberCouponID uint64, status string) error {
+	if status != "unused" && status != "expired" {
+		return apperr.ErrParamInvalid
+	}
+	memberCoupon, err := s.memberCoupons.FindByIDForMember(ctx, memberID, memberCouponID)
+	if err != nil {
+		return err
+	}
+	if memberCoupon == nil {
+		return apperr.ErrNotFound
+	}
+	if memberCoupon.Status == "used" {
+		return apperr.New(30028, "已使用的优惠券不能变更状态")
+	}
+	fields := map[string]interface{}{"status": status}
+	if status == "unused" {
+		fields["used_at"] = nil
+		fields["used_order_id"] = 0
+	}
+	return s.memberCoupons.UpdateFields(ctx, memberID, memberCouponID, fields)
 }
 
 func (s *MemberService) UpdateMemberStatus(ctx context.Context, id uint64, status int8) error {
