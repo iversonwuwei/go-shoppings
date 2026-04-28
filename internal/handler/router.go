@@ -51,6 +51,7 @@ type Deps struct {
 	AdminSubH          *admin.SubscriptionHandler
 	PlatformSettingsH  *admin.PlatformSettingsHandler
 	PlatformGlobalH    *admin.PlatformGlobalSettingsHandler
+	PlatformRegionH    *admin.RegionHandler
 	PlatformUsersH     *admin.PlatformUserHandler
 	UploadH            *admin.UploadHandler
 	StorageBasePath    string // 本地静态文件根目录
@@ -114,6 +115,12 @@ func New(d *Deps) *gin.Engine {
 		sec.POST("/features", d.AdminPlatformH.CreateFeature)
 		sec.PUT("/features/:id", d.AdminPlatformH.UpdateFeature)
 		sec.DELETE("/features/:id", d.AdminPlatformH.DeleteFeature)
+
+		sec.GET("/regions", d.PlatformRegionH.List)
+		sec.GET("/regions/tree", d.PlatformRegionH.Tree)
+		sec.POST("/regions", d.PlatformRegionH.Create)
+		sec.PUT("/regions/:id", d.PlatformRegionH.Update)
+		sec.DELETE("/regions/:id", d.PlatformRegionH.Delete)
 
 		sec.GET("/payment-configs", d.PlatformSettingsH.ListPaymentAudit)
 		sec.POST("/payment-configs/:id/audit", d.PlatformSettingsH.AuditPayment)
@@ -204,6 +211,7 @@ func New(d *Deps) *gin.Engine {
 			}
 			response.OK(c, rows)
 		})
+		pub.GET("/regions", d.PlatformRegionH.PublicTree)
 		pub.POST("/apply", func(c *gin.Context) {
 			var body struct {
 				model.Tenant

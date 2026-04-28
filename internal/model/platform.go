@@ -138,6 +138,22 @@ type PlanFeature struct {
 
 func (PlanFeature) TableName() string { return "plan_features" }
 
+// Region 平台统一维护的省/市/区数据，供小程序地址选择使用。
+type Region struct {
+	ID        uint64    `gorm:"primaryKey;autoIncrement" json:"id"`
+	ParentID  uint64    `gorm:"not null;default:0;index" json:"parent_id"`
+	Code      string    `gorm:"size:32;not null;default:'';index" json:"code"`
+	Name      string    `gorm:"size:50;not null" json:"name"`
+	Level     int8      `gorm:"not null;default:1;index" json:"level"`
+	Sort      int       `gorm:"not null;default:0" json:"sort"`
+	Enabled   int8      `gorm:"not null;default:1;index" json:"enabled"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Children  []Region  `gorm:"-" json:"children,omitempty"`
+}
+
+func (Region) TableName() string { return "regions" }
+
 // 公共删除时间字段
 type SoftDelete struct {
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`

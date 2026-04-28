@@ -90,6 +90,7 @@ func main() {
 	subOrderRepo := repository.NewTenantSubscriptionOrderRepo(db)
 	platformSettingsRepo := repository.NewPlatformSettingsRepo(db)
 	uploadRepo := repository.NewUploadRepo(db)
+	regionRepo := repository.NewRegionRepo(db)
 
 	// 对象存储（local / minio）
 	objectStore, err := storage.New(cfg.Storage)
@@ -151,6 +152,7 @@ func main() {
 		AdminSubH:          admin.NewSubscriptionHandler(subscriptionSvc),
 		PlatformSettingsH:  admin.NewPlatformSettingsHandler(settingsSvc),
 		PlatformGlobalH:    admin.NewPlatformGlobalSettingsHandler(platformSettingsRepo),
+		PlatformRegionH:    admin.NewRegionHandler(regionRepo),
 		PlatformUsersH:     admin.NewPlatformUserHandler(adminRepo),
 		UploadH:            admin.NewUploadHandler(uploadRepo, objectStore, aiImageClient),
 		StorageBasePath:    localStaticPath(objectStore, cfg.Storage),

@@ -740,7 +740,26 @@ CREATE TABLE IF NOT EXISTS "platform_settings" (
 
 INSERT INTO "platform_settings" ("id") VALUES (1) ON CONFLICT ("id") DO NOTHING;
 
--- 30. tenant_site_configs（租户站点 / 商城装修配置）
+-- 30. regions（平台统一维护省 / 市 / 区数据）
+CREATE TABLE IF NOT EXISTS "regions" (
+    "id"          BIGSERIAL PRIMARY KEY,
+    "parent_id"   BIGINT NOT NULL DEFAULT 0,
+    "code"        VARCHAR(32) NOT NULL DEFAULT '',
+    "name"        VARCHAR(50) NOT NULL,
+    "level"       SMALLINT NOT NULL DEFAULT 1,
+    "sort"        INT NOT NULL DEFAULT 0,
+    "enabled"     SMALLINT NOT NULL DEFAULT 1,
+    "created_at"  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    "updated_at"  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS "idx_regions_parent"
+    ON "regions" ("parent_id");
+CREATE INDEX IF NOT EXISTS "idx_regions_level_enabled"
+    ON "regions" ("level", "enabled", "sort", "id");
+CREATE INDEX IF NOT EXISTS "idx_regions_code"
+    ON "regions" ("code");
+
+-- 31. tenant_site_configs（租户站点 / 商城装修配置）
 CREATE TABLE IF NOT EXISTS "tenant_site_configs" (
     "tenant_id"                        BIGINT PRIMARY KEY REFERENCES "tenants"("id"),
     "custom_domain"                    VARCHAR(128) NOT NULL DEFAULT '',
@@ -773,7 +792,7 @@ CREATE TABLE IF NOT EXISTS "tenant_site_configs" (
     "updated_at"                       TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- 31. runtime flow tables（运行态功能表，保持和 Go model / migrations 一致）
+-- 32. runtime flow tables（运行态功能表，保持和 Go model / migrations 一致）
 CREATE TABLE IF NOT EXISTS "tenant_subscription_orders" (
     "id"                 BIGSERIAL PRIMARY KEY,
     "tenant_id"          BIGINT NOT NULL,

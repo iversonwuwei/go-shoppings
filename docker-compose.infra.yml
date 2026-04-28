@@ -1,37 +1,6 @@
 name: go-shoppings
 
 services:
-  postgres:
-    image: postgres:15-alpine
-    container_name: wechat-mall-postgres
-    profiles:
-      - local
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres123
-      POSTGRES_DB: wechat_mall_saas
-      TZ: Asia/Shanghai
-    ports:
-      - "5433:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./scripts/init_db.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
-      - ./scripts/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro
-    command:
-      - "postgres"
-      - "-c"
-      - "max_connections=1000"
-      - "-c"
-      - "shared_buffers=256MB"
-      - "-c"
-      - "timezone=Asia/Shanghai"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d wechat_mall_saas"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
   redis:
     image: redis:7-alpine
     container_name: wechat-mall-redis
@@ -47,28 +16,5 @@ services:
       timeout: 3s
       retries: 5
 
-  minio:
-    image: minio/minio
-    container_name: wechat-mall-minio
-    profiles:
-      - local
-    restart: unless-stopped
-    command: server /data --console-address ":9001"
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
-    volumes:
-      - minio_data:/data
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
 volumes:
-  postgres_data:
   redis_data:
-  minio_data:

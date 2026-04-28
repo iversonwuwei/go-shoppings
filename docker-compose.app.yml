@@ -13,7 +13,7 @@ services:
       APP_ENV: "${APP_ENV:-development}"
       DATABASE_URL: "${SUPABASE_DB_DSN:-}"
       DATABASE_PREFER_SIMPLE_PROTOCOL: "${DATABASE_PREFER_SIMPLE_PROTOCOL:-true}"
-      REDIS_HOST: "${REDIS_HOST:-redis}"
+      REDIS_HOST: "redis"
       REDIS_PORT: "${REDIS_PORT:-6379}"
       JWT_SECRET: "${JWT_SECRET:-your-jwt-secret-key-change-in-production}"
       STORAGE_TYPE: "${STORAGE_TYPE:-supabase}"
