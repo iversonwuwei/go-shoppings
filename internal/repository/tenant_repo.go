@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 	"time"
 
@@ -99,7 +100,13 @@ func (r *TenantRepo) List(ctx context.Context, status *int8, keyword string, pag
 	}
 	if keyword != "" {
 		kw := "%" + keyword + "%"
-		tx = tx.Where("company_name ILIKE ? OR code ILIKE ? OR contact_phone ILIKE ?", kw, kw, kw)
+		cond := "company_name ILIKE ? OR code ILIKE ? OR contact_phone ILIKE ?"
+		args := []interface{}{kw, kw, kw}
+		if id, err := strconv.ParseUint(strings.TrimSpace(keyword), 10, 64); err == nil && id > 0 {
+			cond += " OR id = ?"
+			args = append(args, id)
+		}
+		tx = tx.Where(cond, args...)
 	}
 	if err := tx.Count(&total).Error; err != nil {
 		return nil, 0, err
