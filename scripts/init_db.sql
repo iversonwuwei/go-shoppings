@@ -662,7 +662,7 @@ CREATE INDEX "idx_admin_action_logs_time" ON "admin_action_logs" ("created_at");
 -- ----------------------------
 CREATE TABLE "uploads" (
     "id"              BIGSERIAL PRIMARY KEY,
-    "tenant_id"       BIGINT NOT NULL REFERENCES "tenants"("id"),
+    "tenant_id"       BIGINT NOT NULL DEFAULT 0,
     "file_key"        VARCHAR(255) NOT NULL,
     "original_name"   VARCHAR(255) NOT NULL,
     "file_size"       BIGINT NOT NULL,

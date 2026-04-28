@@ -1,0 +1,17 @@
+.git
+.github
+.vscode
+.idea
+.env
+*.log
+logs
+tmp
+bin
+uploads
+coverage.out
+coverage.html
+vendor
+ai-image-service/.venv
+ai-image-service/app/__pycache__
+**/__pycache__
+**/*.pyc

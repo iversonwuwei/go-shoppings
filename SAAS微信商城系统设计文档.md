@@ -120,7 +120,8 @@ wechat-mall-saas/
 ├── go.mod
 ├── go.sum
 ├── .air.toml                    # Air 热重载
-└── docker-compose.yml            # MySQL + Redis
+├── docker-compose.infra.yml      # PostgreSQL + Redis + MinIO
+└── docker-compose.app.yml        # API + AI 图片服务
 ```
 
 ---

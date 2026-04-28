@@ -18,6 +18,7 @@ type Config struct {
 	WeChat    WeChatConfig    `mapstructure:"wechat"`
 	WxPay     WxPayConfig     `mapstructure:"wxpay"`
 	Storage   StorageConfig   `mapstructure:"storage"`
+	AIImage   AIImageConfig   `mapstructure:"ai_image"`
 	Logging   LoggingConfig   `mapstructure:"logging"`
 	RateLimit RateLimitConfig `mapstructure:"rate_limit"`
 }
@@ -104,6 +105,13 @@ type StorageConfig struct {
 	} `mapstructure:"supabase"`
 }
 
+type AIImageConfig struct {
+	Enabled        bool   `mapstructure:"enabled"`
+	ServiceURL     string `mapstructure:"service_url"`
+	TimeoutSeconds int    `mapstructure:"timeout_seconds"`
+	MaxBytes       int    `mapstructure:"max_bytes"`
+}
+
 type LoggingConfig struct {
 	Level      string `mapstructure:"level"`
 	Filename   string `mapstructure:"filename"`
@@ -164,6 +172,7 @@ func expandEnvironmentValues(config *Config) {
 	config.Storage.Supabase.ServiceRoleKey = os.ExpandEnv(config.Storage.Supabase.ServiceRoleKey)
 	config.Storage.Supabase.Bucket = os.ExpandEnv(config.Storage.Supabase.Bucket)
 	config.Storage.Supabase.BaseURL = os.ExpandEnv(config.Storage.Supabase.BaseURL)
+	config.AIImage.ServiceURL = os.ExpandEnv(config.AIImage.ServiceURL)
 }
 
 func applyEnvironmentOverrides(config *Config) error {
@@ -217,6 +226,17 @@ func applyEnvironmentOverrides(config *Config) error {
 		return err
 	}
 	if err := setIntFromEnv(&config.Storage.Supabase.SignedURLExpires, "SUPABASE_STORAGE_SIGNED_URL_EXPIRES"); err != nil {
+		return err
+	}
+
+	if err := setBoolFromEnv(&config.AIImage.Enabled, "AI_IMAGE_ENABLED"); err != nil {
+		return err
+	}
+	setStringFromEnv(&config.AIImage.ServiceURL, "AI_IMAGE_SERVICE_URL")
+	if err := setIntFromEnv(&config.AIImage.TimeoutSeconds, "AI_IMAGE_TIMEOUT_SECONDS"); err != nil {
+		return err
+	}
+	if err := setIntFromEnv(&config.AIImage.MaxBytes, "AI_IMAGE_MAX_BYTES"); err != nil {
 		return err
 	}
 

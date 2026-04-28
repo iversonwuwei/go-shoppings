@@ -30,14 +30,14 @@
 本地仍需要 Redis：
 
 ```bash
-docker compose up -d redis
+docker compose -f docker-compose.infra.yml up -d redis
 go run ./cmd/api/main.go
 ```
 
-Docker Compose 运行 API 时也会读取同一份 `.env`。
+Docker Compose 运行 API 时也会读取同一份 `.env`，应用服务定义在 `docker-compose.app.yml`。
 
 本地 Postgres 和 MinIO 仍保留在 `local` profile 中，仅做回退使用：
 
 ```bash
-docker compose --profile local up -d postgres minio
+docker compose -f docker-compose.infra.yml --profile local up -d postgres minio
 ```

@@ -1,0 +1,161 @@
+name: Deploy backend
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - ".github/workflows/deploy-backend.yml"
+      - ".dockerignore"
+      - "Dockerfile"
+      - "docker-compose.app.yml"
+      - "docker-compose.infra.yml"
+      - "go.mod"
+      - "go.sum"
+      - "cmd/**"
+      - "configs/**"
+      - "internal/**"
+      - "ai-image-service/**"
+      - "scripts/init_db.sql"
+      - "scripts/migrations/**"
+  workflow_dispatch:
+
+concurrency:
+  group: backend-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy Docker services
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+      DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+      DEPLOY_BRANCH: ${{ secrets.DEPLOY_BRANCH }}
+      APPLY_DATABASE_MIGRATIONS: ${{ secrets.APPLY_DATABASE_MIGRATIONS }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate compose files
+        run: |
+          docker compose -f docker-compose.infra.yml config --quiet
+          docker compose -f docker-compose.app.yml config --quiet
+          docker compose -f docker-compose.infra.yml -f docker-compose.app.yml config --quiet
+
+      - name: Prepare SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${DEPLOY_HOST:?Set GitHub secret DEPLOY_HOST}"
+          : "${DEPLOY_USER:?Set GitHub secret DEPLOY_USER}"
+          : "${DEPLOY_SSH_KEY:?Set GitHub secret DEPLOY_SSH_KEY}"
+
+          DEPLOY_PORT="${DEPLOY_PORT:-22}"
+          DEPLOY_PATH="${DEPLOY_PATH:-/srv/go-shoppings}"
+          DEPLOY_BRANCH="${DEPLOY_BRANCH:-master}"
+          APPLY_DATABASE_MIGRATIONS="${APPLY_DATABASE_MIGRATIONS:-true}"
+
+          {
+            echo "DEPLOY_PORT=$DEPLOY_PORT"
+            echo "DEPLOY_PATH=$DEPLOY_PATH"
+            echo "DEPLOY_BRANCH=$DEPLOY_BRANCH"
+            echo "APPLY_DATABASE_MIGRATIONS=$APPLY_DATABASE_MIGRATIONS"
+          } >> "$GITHUB_ENV"
+
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" | tr -d '\r' > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p "$DEPLOY_PORT" "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+
+      - name: Update remote checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          REPOSITORY_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          ssh -i ~/.ssh/deploy_key -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
+            "DEPLOY_PATH=$(printf '%q' "$DEPLOY_PATH") DEPLOY_BRANCH=$(printf '%q' "$DEPLOY_BRANCH") REPOSITORY_URL=$(printf '%q' "$REPOSITORY_URL") bash -s" <<'REMOTE'
+          set -euo pipefail
+
+          command -v git >/dev/null
+          command -v docker >/dev/null
+          docker compose version >/dev/null
+
+          mkdir -p "$(dirname "$DEPLOY_PATH")"
+          if [ ! -e "$DEPLOY_PATH" ]; then
+            git clone --branch "$DEPLOY_BRANCH" "$REPOSITORY_URL" "$DEPLOY_PATH"
+          elif [ ! -d "$DEPLOY_PATH/.git" ]; then
+            echo "Deploy path exists but is not a git checkout: $DEPLOY_PATH" >&2
+            exit 1
+          fi
+
+          cd "$DEPLOY_PATH"
+          git fetch origin "$DEPLOY_BRANCH"
+          git reset --hard "origin/$DEPLOY_BRANCH"
+          REMOTE
+
+      - name: Sync environment file
+        shell: bash
+        env:
+          DEPLOY_ENV_FILE: ${{ secrets.DEPLOY_ENV_FILE }}
+        run: |
+          set -euo pipefail
+          if [ -z "$DEPLOY_ENV_FILE" ]; then
+            echo "DEPLOY_ENV_FILE is not set; using existing remote .env"
+            exit 0
+          fi
+
+          tmp_env="$(mktemp)"
+          trap 'rm -f "$tmp_env"' EXIT
+          printf '%s\n' "$DEPLOY_ENV_FILE" > "$tmp_env"
+          ssh -i ~/.ssh/deploy_key -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
+            "DEPLOY_PATH=$(printf '%q' "$DEPLOY_PATH") bash -c 'mkdir -p \"\$DEPLOY_PATH\"; umask 077; cat > \"\$DEPLOY_PATH/.env\"'" < "$tmp_env"
+
+      - name: Apply migrations and restart services
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/deploy_key -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
+            "DEPLOY_PATH=$(printf '%q' "$DEPLOY_PATH") APPLY_DATABASE_MIGRATIONS=$(printf '%q' "$APPLY_DATABASE_MIGRATIONS") bash -s" <<'REMOTE'
+          set -euo pipefail
+          cd "$DEPLOY_PATH"
+
+          if [ ! -f .env ]; then
+            echo "Missing $DEPLOY_PATH/.env. Set DEPLOY_ENV_FILE or create the file on the server." >&2
+            exit 1
+          fi
+
+          if [ "$APPLY_DATABASE_MIGRATIONS" != "false" ] && [ -d scripts/migrations ]; then
+            docker run --rm --env-file .env -v "$PWD/scripts/migrations:/migrations:ro" postgres:15-alpine sh -c '
+              set -e
+              for file in /migrations/*.sql; do
+                [ -e "$file" ] || continue
+                echo "Applying $(basename "$file")"
+                psql "$SUPABASE_DB_DSN" -v ON_ERROR_STOP=1 -f "$file"
+              done
+            '
+          fi
+
+          docker compose -f docker-compose.infra.yml up -d redis
+          for i in $(seq 1 30); do
+            if docker compose -f docker-compose.infra.yml exec -T redis redis-cli ping >/dev/null 2>&1; then
+              break
+            fi
+            if [ "$i" -eq 30 ]; then
+              echo "Redis did not become ready" >&2
+              docker compose -f docker-compose.infra.yml logs redis >&2
+              exit 1
+            fi
+            sleep 1
+          done
+
+          docker compose -f docker-compose.app.yml up -d --build api ai-image
+          docker compose -f docker-compose.infra.yml -f docker-compose.app.yml ps
+          curl --retry 12 --retry-delay 5 --retry-connrefused -fsS http://127.0.0.1:8080/healthz >/dev/null
+          curl --retry 12 --retry-delay 5 --retry-connrefused -fsS http://127.0.0.1:8090/healthz >/dev/null
+          REMOTE

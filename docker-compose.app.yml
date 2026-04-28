@@ -1,0 +1,48 @@
+name: go-shoppings
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: wechat-mall-api
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      APP_ENV: "${APP_ENV:-development}"
+      DATABASE_URL: "${SUPABASE_DB_DSN:-}"
+      DATABASE_PREFER_SIMPLE_PROTOCOL: "${DATABASE_PREFER_SIMPLE_PROTOCOL:-true}"
+      REDIS_HOST: "${REDIS_HOST:-redis}"
+      REDIS_PORT: "${REDIS_PORT:-6379}"
+      JWT_SECRET: "${JWT_SECRET:-your-jwt-secret-key-change-in-production}"
+      STORAGE_TYPE: "${STORAGE_TYPE:-supabase}"
+      SUPABASE_URL: "${SUPABASE_URL:-}"
+      SUPABASE_SERVICE_ROLE_KEY: "${SUPABASE_SERVICE_ROLE_KEY:-}"
+      SUPABASE_STORAGE_BUCKET: "${SUPABASE_STORAGE_BUCKET:-wxmall}"
+      SUPABASE_STORAGE_PUBLIC_READ: "${SUPABASE_STORAGE_PUBLIC_READ:-true}"
+      SUPABASE_STORAGE_CREATE_BUCKET: "${SUPABASE_STORAGE_CREATE_BUCKET:-true}"
+      SUPABASE_STORAGE_UPSERT: "${SUPABASE_STORAGE_UPSERT:-true}"
+      AI_IMAGE_ENABLED: "${AI_IMAGE_ENABLED:-true}"
+      AI_IMAGE_SERVICE_URL: "${AI_IMAGE_SERVICE_URL:-http://ai-image:8090}"
+    volumes:
+      - ./configs:/app/configs:ro
+      - uploads:/app/uploads
+
+  ai-image:
+    build:
+      context: ./ai-image-service
+      dockerfile: Dockerfile
+    container_name: wechat-mall-ai-image
+    restart: unless-stopped
+    ports:
+      - "8090:8090"
+    environment:
+      MINIMAX_API_KEY: "${MINIMAX_API_KEY:-}"
+      MINIMAX_API_BASE_URL: "${MINIMAX_API_BASE_URL:-https://api.minimaxi.com/v1}"
+      MINIMAX_IMAGE_MODEL: "${MINIMAX_IMAGE_MODEL:-image-01}"
+      MINIMAX_IMAGE_ENDPOINT: "${MINIMAX_IMAGE_ENDPOINT:-/image_generation}"
+      MINIMAX_TIMEOUT_SECONDS: "${MINIMAX_TIMEOUT_SECONDS:-120}"
+
+volumes:
+  uploads:

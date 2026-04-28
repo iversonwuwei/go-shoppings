@@ -35,7 +35,8 @@ wechat-mall-saas/
 │   └── seed.sql            # 初始数据
 ├── Makefile
 ├── go.mod
-├── docker-compose.yml      # PostgreSQL 15 + Redis 7
+├── docker-compose.infra.yml # PostgreSQL 15 + Redis 7 + MinIO
+├── docker-compose.app.yml  # API + AI 图片服务
 ```
 
 ### 数据库设计（必须全部实现，Go模型使用 GORM + PostgreSQL tags）
@@ -382,7 +383,7 @@ var Plans = []Plan{
 6. 库存扣减使用 Redis 分布式锁（SETNX + TTL）
 7. 订单号使用 Snowflake ID
 8. 配置文件全用 YAML（不写死任何值）
-9. docker-compose.yml 包含 MySQL 8.0 + Redis 7.0
+9. Docker Compose 按基础服务与应用服务拆分维护
 
 ### 选做
 1. 拼团/秒杀的防超卖（Redis原子扣减 + 乐观锁双重保障）

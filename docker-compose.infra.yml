@@ -1,4 +1,4 @@
-version: '3.8'
+name: go-shoppings
 
 services:
   postgres:
@@ -47,35 +47,6 @@ services:
       timeout: 3s
       retries: 5
 
-  api:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: wechat-mall-api
-    restart: unless-stopped
-    ports:
-      - "8080:8080"
-    environment:
-      APP_ENV: development
-      DATABASE_URL: ${SUPABASE_DB_DSN:-}
-      DATABASE_PREFER_SIMPLE_PROTOCOL: ${DATABASE_PREFER_SIMPLE_PROTOCOL:-true}
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      JWT_SECRET: ${JWT_SECRET:-your-jwt-secret-key-change-in-production}
-      STORAGE_TYPE: supabase
-      SUPABASE_URL: ${SUPABASE_URL:-}
-      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
-      SUPABASE_STORAGE_BUCKET: ${SUPABASE_STORAGE_BUCKET:-wxmall}
-      SUPABASE_STORAGE_PUBLIC_READ: ${SUPABASE_STORAGE_PUBLIC_READ:-true}
-      SUPABASE_STORAGE_CREATE_BUCKET: ${SUPABASE_STORAGE_CREATE_BUCKET:-true}
-      SUPABASE_STORAGE_UPSERT: ${SUPABASE_STORAGE_UPSERT:-true}
-    depends_on:
-      redis:
-        condition: service_healthy
-    volumes:
-      - ./configs:/app/configs:ro
-      - uploads:/app/uploads
-
   minio:
     image: minio/minio
     container_name: wechat-mall-minio
@@ -100,5 +71,4 @@ services:
 volumes:
   postgres_data:
   redis_data:
-  uploads:
   minio_data:

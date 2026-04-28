@@ -15,6 +15,7 @@ import (
 	"wechat-mall-saas/internal/handler"
 	"wechat-mall-saas/internal/handler/admin"
 	"wechat-mall-saas/internal/handler/member"
+	"wechat-mall-saas/internal/pkg/aiimage"
 	"wechat-mall-saas/internal/pkg/cache"
 	"wechat-mall-saas/internal/pkg/config"
 	"wechat-mall-saas/internal/pkg/database"
@@ -96,6 +97,7 @@ func main() {
 		logger.L.Fatal("init storage failed", zap.Error(err))
 	}
 	logger.L.Info("storage initialized", zap.String("type", objectStore.Type()))
+	aiImageClient := aiimage.New(cfg.AIImage)
 
 	// ========== 装配 Service ==========
 	tenantSvc := service.NewTenantService(tenantRepo, adminRepo, planRepo, tenantPlanLogRepo, rdb)
@@ -150,7 +152,7 @@ func main() {
 		PlatformSettingsH:  admin.NewPlatformSettingsHandler(settingsSvc),
 		PlatformGlobalH:    admin.NewPlatformGlobalSettingsHandler(platformSettingsRepo),
 		PlatformUsersH:     admin.NewPlatformUserHandler(adminRepo),
-		UploadH:            admin.NewUploadHandler(uploadRepo, objectStore),
+		UploadH:            admin.NewUploadHandler(uploadRepo, objectStore, aiImageClient),
 		StorageBasePath:    localStaticPath(objectStore, cfg.Storage),
 
 		PlatformSmsH:        admin.NewPlatformSmsHandler(smsRepo),

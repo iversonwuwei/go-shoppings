@@ -16,9 +16,12 @@ MAIN_API=cmd/api/main.go
 MAIN_WORKER=cmd/worker/main.go
 
 # Docker
-DC=docker-compose
-DC_RUN=$(DC) run --rm
-DC_EXEC=$(DC) exec
+DC=docker compose
+DC_INFRA=$(DC) -f docker-compose.infra.yml
+DC_APP=$(DC) -f docker-compose.app.yml
+DC_ALL=$(DC) -f docker-compose.infra.yml -f docker-compose.app.yml
+DC_RUN=$(DC_APP) run --rm
+DC_EXEC_INFRA=$(DC_INFRA) exec
 
 help: ## 显示帮助
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "\033[36m%-15s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -34,8 +37,8 @@ init: ## 初始化项目（下载依赖、生成wire）
 
 run: ## 本地开发运行 API 服务
 	@echo "==> 检查 PostgreSQL 和 Redis..."
-	@$(DC) ps | grep -q "wechat-mall-postgres" || (echo "PostgreSQL 未运行，请先执行 make db-up" && exit 1)
-	@$(DC) ps | grep -q "wechat-mall-redis" || (echo "Redis 未运行，请先执行 make db-up" && exit 1)
+	@$(DC_INFRA) ps | grep -q "wechat-mall-postgres" || (echo "PostgreSQL 未运行，请先执行 make db-up" && exit 1)
+	@$(DC_INFRA) ps | grep -q "wechat-mall-redis" || (echo "Redis 未运行，请先执行 make db-up" && exit 1)
 	@echo "==> 启动 API 服务 (Air 热重载)..."
 	air -c .air.toml
 
@@ -74,29 +77,29 @@ clean: ## 清理构建产物
 	rm -rf $(BINARY_API) $(BINARY_WORKER) coverage.out coverage.html
 
 db-up: ## 启动数据库和 Redis
-	$(DC) up -d postgres redis
+	$(DC_INFRA) up -d postgres redis
 	@echo "==> 等待 PostgreSQL 就绪..."
 	@sleep 10
-	@$(DC) exec postgres pg_isready -U postgres -d wechat_mall_saas > /dev/null 2>&1 && echo "==> PostgreSQL 已就绪!" || echo "==> PostgreSQL 启动中..."
+	@$(DC_INFRA) exec postgres pg_isready -U postgres -d wechat_mall_saas > /dev/null 2>&1 && echo "==> PostgreSQL 已就绪!" || echo "==> PostgreSQL 启动中..."
 
 db-down: ## 停止数据库服务
-	$(DC) down
+	$(DC_ALL) down
 
 db-reset: ## 重置数据库（删除数据重新初始化）
 	@echo "==> 停止服务..."
-	$(DC) down -v
+	$(DC_ALL) down -v
 	@echo "==> 删除数据卷..."
-	rm -rf $(DC) -f .volumes 2>/dev/null || true
+	rm -rf .volumes 2>/dev/null || true
 	@echo "==> 重启数据库..."
-	$(DC) up -d postgres redis
+	$(DC_INFRA) up -d postgres redis
 	@echo "==> 等待初始化..."
 	@sleep 15
 
 psql: ## 连接 PostgreSQL
-	$(DC_EXEC) postgres psql -U postgres -d wechat_mall_saas
+	$(DC_EXEC_INFRA) postgres psql -U postgres -d wechat_mall_saas
 
 redis-cli: ## 连接 Redis
-	$(DC_EXEC) redis redis-cli
+	$(DC_EXEC_INFRA) redis redis-cli
 
 wire: ## 重新生成 Wire 依赖注入
 	$(GOCMD) generate ./...
@@ -106,7 +109,8 @@ docker-build: ## 构建 Docker 镜像
 	docker build -t wechat-mall-api:latest -f Dockerfile .
 
 docker-up: ## 启动生产环境
-	$(DC) up -d
+	$(DC_INFRA) up -d redis
+	$(DC_APP) up -d --build api ai-image
 
 docker-down: ## 停止生产环境
-	$(DC) down
+	$(DC_ALL) down

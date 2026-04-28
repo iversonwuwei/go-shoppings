@@ -72,6 +72,12 @@ storage:
     create_bucket: true      # bucket 不存在时用 service_role 自动创建
     upsert: true
 
+ai_image:
+  enabled: true
+  service_url: "http://127.0.0.1:8090" # Docker 内部由 AI_IMAGE_SERVICE_URL 覆盖为 http://ai-image:8090
+  timeout_seconds: 120
+  max_bytes: 10485760
+
 logging:
   level: "debug"             # debug / info / warn / error
   filename: "logs/app.log"

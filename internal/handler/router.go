@@ -130,6 +130,7 @@ func New(d *Deps) *gin.Engine {
 
 		// 通用文件上传（平台，tenant_id=0）
 		sec.POST("/upload/image", d.UploadH.Image)
+		sec.POST("/upload/ai-image", d.UploadH.AIImage)
 
 		// 平台用户管理（仅超级管理员可管理，其他角色只能查看自己）
 		sec.GET("/me", d.PlatformUsersH.Me)
@@ -329,6 +330,7 @@ func New(d *Deps) *gin.Engine {
 
 		// 通用文件上传（租户）
 		adAuth.POST("/upload/image", d.UploadH.Image)
+		adAuth.POST("/upload/ai-image", d.UploadH.AIImage)
 
 		// 会员等级管理（需套餐包含 member_level 功能）
 		lvl := adAuth.Group("/member/levels", middleware.RequireFeature(service.FeatureMemberLevel))
