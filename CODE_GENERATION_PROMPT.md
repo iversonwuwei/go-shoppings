@@ -9,6 +9,7 @@
 - 多租户隔离：行级隔离（tenant_id），中间件注入
 - 套餐订阅计费：基础版/专业版/旗舰版三档
 - 微信生态：微信小程序（独立/模板）、微信支付（服务商模式）、微信登录
+- 支付账户归属：租户订阅付款进入平台账户；顾客商品订单付款必须通过服务商模式结算到当前租户子商户账户
 - 技术栈：Go 1.21+ / Gin 1.9+ / GORM / **PostgreSQL 15** / Redis 7.0 / Docker
 
 ## 一、项目结构
@@ -57,11 +58,23 @@ wechat-mall-saas/
 
 **tenants（租户表）**
 - id, code(varchar30,unique), company_name, contact_name, contact_phone, contact_email
-- wechat_appid, wechat_secret（加密）, wechat_mchid, wechat_apiv3_key（加密）, wechat_cert_serial
+- wechat_appid, wechat_secret（加密）
+- wechat_mchid, wechat_apiv3_key（加密）, wechat_cert_serial 为历史直连商户号兼容字段；顾客订单生产支付不得依赖这些字段
 - plan_id（外键plans）, plan_expire_at, status（0待审核/1正常/2欠费/3封禁）
 - brand_name, brand_logo, brand_theme, brand_domain（品牌定制）
 - billing_cycle（monthly/yearly）, extra_features（JSONB，平台额外授予功能）
 - created_at, updated_at
+
+**platform_settings（平台全局设置）**
+- 平台订阅收款：wxpay_app_id, wxpay_mch_id, wxpay_apiv3_key, wxpay_cert_serial, wxpay_notify_url
+- 服务商配置：sp_appid, sp_mchid, sp_apiv3_key, sp_cert_serial, partner_notify_url
+- 平台订阅付款只更新 tenant_subscription_orders；顾客订单付款只更新 payments/orders
+
+**tenant_payment_configs（租户子商户收款配置）**
+- id, tenant_id, provider(wechat), enabled, audit_status, audit_remark, submitted_at, audited_at
+- sub_mchid, sub_appid 为顾客订单生产支付使用的子商户配置
+- sp_mchid, sp_appid 可从平台服务商配置冗余快照，便于回调校验和审计
+- mch_id, app_id, api_v3_key, cert_serial_no, private_key_pem, cert_pem 为历史直连兼容字段，新增生产链路优先不用
 
 **tenant_plan_logs（套餐变更记录）**
 - id, tenant_id, old_plan_id, new_plan_id, change_type（create/renew/upgrade/downgrade）
@@ -71,8 +84,9 @@ wechat-mall-saas/
 
 - 初始化脚本和迁移脚本必须覆盖运行态 Go 模型中声明的表，避免接口流程进入后才暴露 `relation does not exist`。
 - 增量建表必须幂等：`CREATE TABLE IF NOT EXISTS`、`ALTER TABLE ... ADD COLUMN IF NOT EXISTS`、`CREATE INDEX IF NOT EXISTS`。
-- 当前必须覆盖的增量流程表：`api_tokens`、`api_request_logs`、`sms_settings`、`sms_templates`、`sms_logs`、`distribution_settings`、`distributors`、`commission_logs`、`groupon_activities`、`groupons`、`groupon_members`、`points_settings`、`delivery_settings`、`tenant_subscription_orders`。
+- 当前必须覆盖的增量流程表：`api_tokens`、`api_request_logs`、`sms_settings`、`sms_templates`、`sms_logs`、`tenant_payment_configs`、`distribution_settings`、`distributors`、`commission_logs`、`groupon_activities`、`groupons`、`groupon_members`、`points_settings`、`delivery_settings`、`tenant_subscription_orders`。
 - 当前必须覆盖的租户扩展字段：`tenants.billing_cycle`、`tenants.extra_features`。
+- 服务商支付迁移必须补齐 `tenant_payment_configs.sp_mchid/sp_appid/sub_mchid/sub_appid`，以及 `payments.sp_mchid/sp_appid/sub_mchid/sub_appid/settlement_tenant_id/pay_scene`，并提供 information_schema 校验 SQL。
 
 ### 商城业务层表
 
@@ -170,11 +184,25 @@ wechat-mall-saas/
 
 **payments（支付记录表）** - tenant_id
 - id, tenant_id, payment_no(varchar32,unique), order_no, member_id
-- amount, status（pending/success/failed/closed）
+- amount, status（pending/success/failed/closed）, pay_scene(member_order)
 - wechat_trade_type, wechat_transaction_id, wechat_payer_openid, wechat_paid_at
+- 服务商字段：sp_appid, sp_mchid, sub_appid, sub_mchid, settlement_tenant_id
 - refund_amount, refund_status（none/partial/full）
 - closed_at, close_reason, expire_at, created_at, updated_at
 - 索引：idx_tenant, idx_order, idx_wechat_transaction_id, idx_status
+
+**after_sale_orders（售后单表）** - tenant_id
+- id, tenant_id, after_sale_no(unique), order_id, order_no, order_item_id, member_id
+- type(refund/return_refund), status(pending/approved/rejected/returning/received/refunded/cancelled)
+- amount, reason, description, images(JSONB), order_status_before
+- audit_remark, return_express_company, return_express_no, refund_no
+- applied_at, audited_at, returned_at, received_at, refunded_at, cancelled_at, created_at, updated_at
+- 首版仅支持整单售后；真实微信退款接入前，商户“退款完成”只代表业务状态确认。
+
+**after_sale_reasons（售后原因配置表）**
+- id, code(unique), label, type(all/refund/return_refund), sort_order, enabled, created_at, updated_at
+- 平台统一维护；小程序只能从启用原因下拉选择，提交 reason 文本快照。
+- 初始化默认原因：不想要了、拍错/多拍、商品破损、商品与描述不符、少件/漏发、质量问题、协商一致退款。
 
 **admin_action_logs（操作日志）**
 - id, tenant_id, admin_id, admin_username, action, target_type, target_id, target_desc
@@ -283,6 +311,8 @@ var Plans = []Plan{
 
 - 按钮布局必须按场景判断：登录、保存、空态引导等主行动居中或满宽；结算/订单详情使用跟随内容的行内操作组；搜索、领取、数量加减等局部工具按钮保持紧凑。
 - 全局按钮样式只负责外观，不应通过通用选择器强制所有卡片按钮居右。
+- 会员中心头图下不要生成独立三宫格统计卡；积分、成长值摘要放在头图或“会员资产”模块中，避免重复占位。
+- 使用自定义底部导航的页面必须在根节点加 `tab-page`，底部 padding 要覆盖导航条高度、渐变壳和 `env(safe-area-inset-bottom)`，避免页面底部内容被导航遮挡。
 
 ### 小程序端 - 订单
 - POST /api/v1/orders {items:[{product_id, sku_id, quantity}], address_id, coupon_id, buyer_remark, delivery_type}
@@ -291,7 +321,12 @@ var Plans = []Plan{
 - GET /api/v1/orders/{id}/detail
 - POST /api/v1/orders/{id}/cancel（待支付状态）
 - POST /api/v1/orders/{id}/confirm（确认收货）
-- POST /api/v1/orders/{id}/apply-refund
+- GET /api/v1/member/after-sale-reasons {type} → 启用售后原因列表，用于小程序下拉
+- POST /api/v1/member/orders/{id}/after-sales {type, reason, description, amount, images} → 发起整单售后，reason 必须来自启用原因，订单进入 refunding
+- GET /api/v1/member/after-sales {status, order_id, page, size} → 我的售后单
+- GET /api/v1/member/after-sales/{id} → 售后详情
+- POST /api/v1/member/after-sales/{id}/return {return_express_company, return_express_no} → 提交退货物流
+- POST /api/v1/member/after-sales/{id}/cancel → 取消待处理售后并恢复订单原状态
 - GET /api/v1/orders/{id}/express（查询快递）
 
 ### 小程序端 - 营销
@@ -304,10 +339,14 @@ var Plans = []Plan{
 - POST /api/v1/group-buys/{id}/join
 
 ### 小程序端 - 支付
-- POST /api/v1/payments/create {order_no, pay_channel} → {payment_no, pay_params}
-- POST /api/v1/payments/callback/wechat → 微信支付回调（V3 AES-256-GCM解密）
+
+- POST /api/v1/member/payments {order_no} → {payment_no, pay_params, mock_paid, status}
+- POST /api/v1/payments/callback/wechat → 顾客订单微信支付回调（V3 AES-256-GCM 解密，服务商 + 子商户校验）
+- POST /api/v1/public/subscription/callback → 租户订阅微信支付回调，仅处理 tenant_subscription_orders
+- 顾客订单支付生产环境必须使用 `/v3/pay/partner/transactions/jsapi`，资金结算到当前租户子商户；平台订阅付款使用平台自有收款配置，资金进入平台账户。
 
 ### 管理端 - 商品
+
 - POST /api/v1/admin/products
 - PUT /api/v1/admin/products/{id}
 - PUT /api/v1/admin/products/{id}/status {status:0下架/1上架}
@@ -318,18 +357,44 @@ var Plans = []Plan{
 - PUT /api/v1/admin/categories/{id}
 
 ### 管理端 - 订单
+
 - GET /api/v1/admin/orders {page, page_size, status, order_no, date_range}
 - PUT /api/v1/admin/orders/{id}/status
 - POST /api/v1/admin/orders/{id}/ship {express_company, express_no}
-- POST /api/v1/admin/orders/{id}/refund {agree:bool, amount, reason}
+- GET /api/v1/admin/after-sales {page,size,status,order_id,member_id} → 售后审核列表
+- GET /api/v1/admin/after-sales/{id} → 售后详情
+- POST /api/v1/admin/after-sales/{id}/approve {remark} → 审核通过
+- POST /api/v1/admin/after-sales/{id}/reject {remark} → 驳回并恢复订单原状态
+- POST /api/v1/admin/after-sales/{id}/receive {remark} → 确认收到退货
+- POST /api/v1/admin/after-sales/{id}/refund {remark} → 标记退款完成，订单进入 refunded
 - GET /api/v1/admin/orders/export（导出Excel）
+
+### 平台端 - 售后原因
+
+- GET /api/v1/platform/after-sale-reasons → 平台售后原因列表
+- POST /api/v1/platform/after-sale-reasons {code,label,type,sort_order,enabled} → 新增原因
+- PUT /api/v1/platform/after-sale-reasons/{id} {label,type,sort_order,enabled} → 编辑原因
+- PATCH /api/v1/platform/after-sale-reasons/{id}/enabled {enabled} → 启用/停用
+- DELETE /api/v1/platform/after-sale-reasons/{id} → 删除未使用原因；已上线原因优先停用。
+
+### 管理端 - 收款配置
+
+- GET /api/v1/admin/settings/payment → 当前租户收款配置列表
+- PUT /api/v1/admin/settings/payment {provider:'wechat', sub_mchid, sub_appid, notify_url, mch_id?, app_id?, api_v3_key?, cert_serial_no?, private_key_pem?, cert_pem?} → 提交后 audit_status=pending, enabled=0
+- GET /api/v1/platform/settings → 平台全局设置，包含订阅收款 wxpay_*和服务商 sp_* 字段
+- PUT /api/v1/platform/settings → 更新平台基础信息、wxpay_*、sp_appid、sp_mchid、sp_apiv3_key、sp_cert_serial、partner_notify_url
+- GET /api/v1/platform/payment-configs {page,size,status} → 租户子商户配置审核列表
+- POST /api/v1/platform/payment-configs/{id}/audit {approve, remark} → 审核通过后 enabled=1
+- 服务商字段用于顾客订单，wxpay_* 字段用于平台订阅收款，两条链路不得复用。
 
 ### 管理端 - 优惠券/拼团/秒杀/分销（CRUD + 统计）
 
 ### 管理端 - 仪表盘
+
 - GET /api/v1/platform/dashboard → {tenant_count, active_tenant_count, today_gmv, today_orders, today_new_members, expire_soon_tenants, top_tenants}
 
 ### 响应格式
+
 ```json
 // 成功
 {"code":0,"message":"success","data":{}}
@@ -340,6 +405,7 @@ var Plans = []Plan{
 ```
 
 ### 错误码规范
+
 - 1xxxx：认证/权限
 - 2xxxx：参数校验
 - 3xxxx：业务逻辑（库存不足=30001，余额不足=30002，套餐到期=30003，功能未开通=30004）
@@ -349,6 +415,7 @@ var Plans = []Plan{
 ## 六、微信对接实现
 
 ### 微信登录
+
 ```go
 // 1. 小程序调用 wx.login() 获取 code
 // 2. 我们的 API 调用微信 code2session
@@ -360,16 +427,29 @@ var Plans = []Plan{
 // 5. 手机号解密：session_key 作为 AES-256-CBC Key 解密 encryptedData
 ```
 
-### 微信支付（JSAPI）
+### 微信支付（JSAPI / 服务商模式）
+
 ```go
-// 1. 统一下单 POST https://api.mch.weixin.qq.com/v3/pay/transactions/jsapi
+// 1. 平台订阅付款：POST https://api.mch.weixin.qq.com/v3/pay/transactions/jsapi
 // Header: Authorization: WECHATPAY2-SHA256-RSA2048 + 证书签名
 // Body: {appid, mchid, description, out_trade_no, notify_url, amount:{total}, payer:{openid}}
-// 2. 拿 prepay_id，生成调起小程序支付参数
-// 3. 回调：POST /api/v1/payments/callback/wechat
+// - appid/mchid 使用平台收款配置，out_trade_no = tenant_subscription_orders.order_no
+// - 回调：POST /api/v1/public/subscription/callback
+//
+// 2. 顾客订单付款：POST https://api.mch.weixin.qq.com/v3/pay/partner/transactions/jsapi
+// Header: Authorization: WECHATPAY2-SHA256-RSA2048 + 服务商证书签名
+// Body: {sp_appid, sp_mchid, sub_appid, sub_mchid, description, out_trade_no, notify_url, amount:{total}, payer:{sp_openid/sub_openid}}
+// - sp_appid/sp_mchid 使用平台服务商配置，sub_appid/sub_mchid 使用当前租户审核通过的子商户配置
+// - out_trade_no = payments.payment_no，payments.pay_scene = member_order
+// - 回调：POST /api/v1/payments/callback/wechat
+//
+// 3. 拿 prepay_id，生成调起小程序支付参数
+// 4. 回调处理
 // - 验证签名（微信发来的是 AES-256-GCM 加密的 ciphertext）
-// - 解密后处理：更新payment状态 → 更新order状态 → 扣库存 → 发积分 → 计算分佣
+// - 校验 out_trade_no、金额、sp_mchid/sub_mchid、trade_state
+// - 解密后处理：更新 payment 状态 → 更新 order 状态 → 扣库存 → 发积分 → 计算分佣
 // - 返回 HTTP 200 + {"code":"SUCCESS","message":"SUCCESS"}
+// - 生产环境缺少服务商或子商户配置时必须拒绝支付下单，不允许模拟支付成功
 ```
 
 ## 七、实现要求

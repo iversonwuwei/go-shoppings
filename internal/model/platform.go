@@ -108,17 +108,22 @@ func (TenantSubscriptionOrder) TableName() string { return "tenant_subscription_
 
 // PlatformSettings 平台全局设置（单行，id 固定为 1）
 type PlatformSettings struct {
-	ID              uint64    `gorm:"primaryKey" json:"id"`
-	PlatformName    string    `json:"platform_name"`
-	PlatformLogo    string    `json:"platform_logo"`
-	SupportPhone    string    `json:"support_phone"`
-	SupportEmail    string    `json:"support_email"`
-	WxpayAppID      string    `gorm:"column:wxpay_app_id" json:"wxpay_app_id"`
-	WxpayMchID      string    `gorm:"column:wxpay_mch_id" json:"wxpay_mch_id"`
-	WxpayAPIv3Key   string    `gorm:"column:wxpay_apiv3_key" json:"wxpay_apiv3_key"`
-	WxpayCertSerial string    `gorm:"column:wxpay_cert_serial" json:"wxpay_cert_serial"`
-	WxpayNotifyURL  string    `gorm:"column:wxpay_notify_url" json:"wxpay_notify_url"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	ID               uint64    `gorm:"primaryKey" json:"id"`
+	PlatformName     string    `json:"platform_name"`
+	PlatformLogo     string    `json:"platform_logo"`
+	SupportPhone     string    `json:"support_phone"`
+	SupportEmail     string    `json:"support_email"`
+	WxpayAppID       string    `gorm:"column:wxpay_app_id" json:"wxpay_app_id"`
+	WxpayMchID       string    `gorm:"column:wxpay_mch_id" json:"wxpay_mch_id"`
+	WxpayAPIv3Key    string    `gorm:"column:wxpay_apiv3_key" json:"wxpay_apiv3_key"`
+	WxpayCertSerial  string    `gorm:"column:wxpay_cert_serial" json:"wxpay_cert_serial"`
+	WxpayNotifyURL   string    `gorm:"column:wxpay_notify_url" json:"wxpay_notify_url"`
+	SpAppID          string    `gorm:"column:sp_appid" json:"sp_appid"`
+	SpMchID          string    `gorm:"column:sp_mchid" json:"sp_mchid"`
+	SpAPIv3Key       string    `gorm:"column:sp_apiv3_key" json:"sp_apiv3_key"`
+	SpCertSerial     string    `gorm:"column:sp_cert_serial" json:"sp_cert_serial"`
+	PartnerNotifyURL string    `gorm:"column:partner_notify_url" json:"partner_notify_url"`
+	UpdatedAt        time.Time `json:"updated_at"`
 }
 
 func (PlatformSettings) TableName() string { return "platform_settings" }

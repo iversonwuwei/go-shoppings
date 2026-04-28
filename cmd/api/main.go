@@ -72,6 +72,8 @@ func main() {
 	orderRepo := repository.NewOrderRepo(db)
 	orderLogRepo := repository.NewOrderLogRepo(db)
 	orderMessageRepo := repository.NewOrderMessageRepo(db)
+	afterSaleRepo := repository.NewAfterSaleRepo(db)
+	afterSaleReasonRepo := repository.NewAfterSaleReasonRepo(db)
 
 	paymentRepo := repository.NewPaymentRepo(db)
 	couponRepo := repository.NewCouponRepo(db)
@@ -106,10 +108,11 @@ func main() {
 	productSvc := service.NewProductService(productRepo, skuRepo, categoryRepo, tenantSvc)
 	categorySvc := service.NewCategoryService(categoryRepo, tenantCategoryAssetRepo)
 	orderSvc := service.NewOrderService(orderRepo, orderLogRepo, orderMessageRepo, productRepo, skuRepo, couponRepo, memberCouponRepo, tenantSvc)
+	afterSaleSvc := service.NewAfterSaleService(afterSaleRepo, afterSaleReasonRepo)
 	paymentSvc := service.NewPaymentService(paymentRepo, orderRepo, orderLogRepo, orderSvc, tenantRepo, memberRepo, pointsLogRepo, pointsSettingsRepo, tenantSvc, cfg.App.Env)
 	couponSvc := service.NewCouponService(couponRepo, memberCouponRepo, tenantSvc)
 	memberSvc := service.NewMemberService(memberRepo, memberAddressRepo, pointsLogRepo, memberLevelRepo, couponRepo, memberCouponRepo)
-	settingsSvc := service.NewSettingsService(paymentConfigRepo, carrierRepo, tenantSvc)
+	settingsSvc := service.NewSettingsService(paymentConfigRepo, carrierRepo, afterSaleReasonRepo, tenantSvc)
 	platformWxpay := wxpay.NewClient(wxpay.Config{
 		AppID:      cfg.WxPay.AppID,
 		MchID:      cfg.WxPay.MchID,
@@ -138,6 +141,7 @@ func main() {
 		AdminProductH:      admin.NewProductHandler(productSvc),
 		AdminCategoryH:     admin.NewCategoryHandler(categorySvc),
 		AdminOrderH:        admin.NewOrderHandler(orderSvc),
+		AdminAfterSaleH:    admin.NewAfterSaleHandler(afterSaleSvc),
 		AdminMemberH:       admin.NewMemberHandler(memberSvc),
 		AdminPlatformH:     admin.NewPlatformHandler(tenantSvc, tenantRepo, planRepo, planFeatureRepo),
 		AdminSettingsH:     admin.NewSettingsHandler(settingsSvc),
@@ -167,6 +171,7 @@ func main() {
 		MemberProductH:      member.NewProductHandler(productSvc),
 		MemberCategoryH:     member.NewCategoryHandler(categorySvc),
 		MemberOrderH:        member.NewOrderHandler(orderSvc),
+		MemberAfterSaleH:    member.NewAfterSaleHandler(afterSaleSvc),
 		MemberCouponH:       member.NewCouponHandler(couponSvc),
 		MemberAddressH:      member.NewAddressHandler(memberSvc),
 		MemberPointsH:       member.NewPointsHandler(memberSvc),

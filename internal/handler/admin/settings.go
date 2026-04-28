@@ -175,3 +175,68 @@ func (h *PlatformSettingsHandler) DeleteCarrier(c *gin.Context) {
 	}
 	response.OK(c, nil)
 }
+
+// -------- 售后原因管理 --------
+
+func (h *PlatformSettingsHandler) ListAfterSaleReasons(c *gin.Context) {
+	rows, err := h.svc.ListAfterSaleReasons(c.Request.Context())
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, rows)
+}
+
+func (h *PlatformSettingsHandler) CreateAfterSaleReason(c *gin.Context) {
+	var in service.AfterSaleReasonInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		response.FailCode(c, 20001, err.Error())
+		return
+	}
+	out, err := h.svc.CreateAfterSaleReason(c.Request.Context(), in)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, out)
+}
+
+func (h *PlatformSettingsHandler) UpdateAfterSaleReason(c *gin.Context) {
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+	var in service.AfterSaleReasonInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		response.FailCode(c, 20001, err.Error())
+		return
+	}
+	out, err := h.svc.UpdateAfterSaleReason(c.Request.Context(), id, in)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, out)
+}
+
+func (h *PlatformSettingsHandler) ToggleAfterSaleReason(c *gin.Context) {
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+	var body struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		response.FailCode(c, 20001, err.Error())
+		return
+	}
+	if err := h.svc.SetAfterSaleReasonEnabled(c.Request.Context(), id, body.Enabled); err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, nil)
+}
+
+func (h *PlatformSettingsHandler) DeleteAfterSaleReason(c *gin.Context) {
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err := h.svc.DeleteAfterSaleReason(c.Request.Context(), id); err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, nil)
+}

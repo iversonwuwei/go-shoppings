@@ -441,6 +441,64 @@ CREATE INDEX "idx_order_messages_tenant" ON "order_messages" ("tenant_id");
 CREATE INDEX "idx_order_messages_order" ON "order_messages" ("order_id");
 CREATE INDEX "idx_order_messages_status" ON "order_messages" ("status");
 
+CREATE TABLE IF NOT EXISTS "after_sale_orders" (
+    "id" BIGSERIAL PRIMARY KEY,
+    "tenant_id" BIGINT NOT NULL REFERENCES "tenants"("id"),
+    "after_sale_no" VARCHAR(32) NOT NULL UNIQUE,
+    "order_id" BIGINT NOT NULL REFERENCES "orders"("id"),
+    "order_no" VARCHAR(32) NOT NULL,
+    "order_item_id" BIGINT NOT NULL DEFAULT 0,
+    "member_id" BIGINT NOT NULL,
+    "type" VARCHAR(20) NOT NULL,
+    "status" VARCHAR(20) NOT NULL DEFAULT 'pending',
+    "amount" NUMERIC(10,2) NOT NULL,
+    "reason" VARCHAR(120) NOT NULL,
+    "description" VARCHAR(500) DEFAULT '',
+    "images" JSONB NOT NULL DEFAULT '[]',
+    "order_status_before" VARCHAR(20) NOT NULL,
+    "audit_remark" VARCHAR(500) DEFAULT '',
+    "refund_remark" VARCHAR(500) DEFAULT '',
+    "return_express_company" VARCHAR(80) DEFAULT '',
+    "return_express_no" VARCHAR(80) DEFAULT '',
+    "refund_no" VARCHAR(64) DEFAULT '',
+    "applied_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    "audited_at" TIMESTAMPTZ,
+    "returned_at" TIMESTAMPTZ,
+    "received_at" TIMESTAMPTZ,
+    "refunded_at" TIMESTAMPTZ,
+    "cancelled_at" TIMESTAMPTZ,
+    "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS "idx_after_sale_tenant" ON "after_sale_orders" ("tenant_id");
+CREATE INDEX IF NOT EXISTS "idx_after_sale_order" ON "after_sale_orders" ("order_id");
+CREATE INDEX IF NOT EXISTS "idx_after_sale_member" ON "after_sale_orders" ("member_id");
+CREATE INDEX IF NOT EXISTS "idx_after_sale_status" ON "after_sale_orders" ("status");
+
+CREATE TABLE IF NOT EXISTS "after_sale_reasons" (
+    "id" BIGSERIAL PRIMARY KEY,
+    "code" VARCHAR(40) NOT NULL UNIQUE,
+    "label" VARCHAR(80) NOT NULL,
+    "type" VARCHAR(20) NOT NULL DEFAULT 'all',
+    "sort_order" INT NOT NULL DEFAULT 0,
+    "enabled" SMALLINT NOT NULL DEFAULT 1,
+    "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS "idx_after_sale_reasons_type" ON "after_sale_reasons" ("type");
+CREATE INDEX IF NOT EXISTS "idx_after_sale_reasons_enabled" ON "after_sale_reasons" ("enabled");
+CREATE INDEX IF NOT EXISTS "idx_after_sale_reasons_sort" ON "after_sale_reasons" ("sort_order");
+
+INSERT INTO "after_sale_reasons" ("code", "label", "type", "sort_order", "enabled") VALUES
+    ('no_longer_needed', '不想要了', 'refund', 10, 1),
+    ('wrong_or_duplicate', '拍错/多拍', 'refund', 20, 1),
+    ('damaged_goods', '商品破损', 'return_refund', 30, 1),
+    ('not_as_described', '商品与描述不符', 'return_refund', 40, 1),
+    ('missing_items', '少件/漏发', 'return_refund', 50, 1),
+    ('quality_issue', '质量问题', 'return_refund', 60, 1),
+    ('negotiated_refund', '协商一致退款', 'all', 70, 1)
+ON CONFLICT ("code") DO NOTHING;
+
 -- ----------------------------
 -- 17. coupons（优惠券表）
 -- ----------------------------
@@ -616,6 +674,12 @@ CREATE TABLE "payments" (
     "member_id"       BIGINT NOT NULL,
     "amount"          NUMERIC(10,2) NOT NULL,
     "status"          VARCHAR(20) NOT NULL DEFAULT 'pending',
+    "pay_scene"       VARCHAR(32) NOT NULL DEFAULT 'member_order',
+    "sp_appid"        VARCHAR(64) DEFAULT '',
+    "sp_mchid"        VARCHAR(64) DEFAULT '',
+    "sub_appid"       VARCHAR(64) DEFAULT '',
+    "sub_mchid"       VARCHAR(64) DEFAULT '',
+    "settlement_tenant_id" BIGINT NOT NULL DEFAULT 0,
     "wechat_trade_type" VARCHAR(20),
     "wechat_transaction_id" VARCHAR(64),
     "wechat_payer_openid" VARCHAR(64),
@@ -632,6 +696,8 @@ CREATE INDEX "idx_payments_tenant" ON "payments" ("tenant_id");
 CREATE INDEX "idx_payments_order" ON "payments" ("order_no");
 CREATE INDEX "idx_payments_wechat" ON "payments" ("wechat_transaction_id");
 CREATE INDEX "idx_payments_status" ON "payments" ("status");
+CREATE INDEX "idx_payments_pay_scene" ON "payments" ("pay_scene");
+CREATE INDEX "idx_payments_settlement_tenant" ON "payments" ("settlement_tenant_id");
 
 -- ----------------------------
 -- 26. admin_action_logs（操作日志）
@@ -684,6 +750,10 @@ CREATE TABLE IF NOT EXISTS "tenant_payment_configs" (
     "provider"          VARCHAR(20) NOT NULL DEFAULT 'wechat',
     "mch_id"            VARCHAR(64),
     "app_id"            VARCHAR(64),
+    "sp_appid"          VARCHAR(64) DEFAULT '',
+    "sp_mchid"          VARCHAR(64) DEFAULT '',
+    "sub_appid"         VARCHAR(64) DEFAULT '',
+    "sub_mchid"         VARCHAR(64) DEFAULT '',
     "api_v3_key"        VARCHAR(128),
     "cert_serial_no"    VARCHAR(64),
     "private_key_pem"   TEXT,
@@ -699,6 +769,8 @@ CREATE TABLE IF NOT EXISTS "tenant_payment_configs" (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS "uniq_tpc_tenant_provider"
     ON "tenant_payment_configs" ("tenant_id", "provider");
+CREATE INDEX IF NOT EXISTS "idx_tpc_sub_mchid"
+    ON "tenant_payment_configs" ("provider", "sub_mchid");
 
 CREATE TABLE IF NOT EXISTS "shipping_carriers" (
     "id"               BIGSERIAL PRIMARY KEY,
@@ -735,6 +807,11 @@ CREATE TABLE IF NOT EXISTS "platform_settings" (
     "wxpay_apiv3_key"     TEXT DEFAULT '',
     "wxpay_cert_serial"   TEXT DEFAULT '',
     "wxpay_notify_url"    TEXT DEFAULT '',
+    "sp_appid"            TEXT DEFAULT '',
+    "sp_mchid"            TEXT DEFAULT '',
+    "sp_apiv3_key"        TEXT DEFAULT '',
+    "sp_cert_serial"      TEXT DEFAULT '',
+    "partner_notify_url"  TEXT DEFAULT '',
     "updated_at"          TIMESTAMPTZ DEFAULT NOW()
 );
 

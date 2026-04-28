@@ -17,6 +17,10 @@ type TenantPaymentConfig struct {
 	Provider      string     `gorm:"size:20;not null;uniqueIndex:idx_tpc_tenant_provider,priority:2" json:"provider"` // wechat / alipay
 	MchID         string     `gorm:"size:64" json:"mch_id"`
 	AppID         string     `gorm:"size:64" json:"app_id"`
+	SpAppID       string     `gorm:"column:sp_appid;size:64" json:"sp_appid"`
+	SpMchID       string     `gorm:"column:sp_mchid;size:64" json:"sp_mchid"`
+	SubAppID      string     `gorm:"column:sub_appid;size:64" json:"sub_appid"`
+	SubMchID      string     `gorm:"column:sub_mchid;size:64" json:"sub_mchid"`
 	APIV3Key      string     `gorm:"column:api_v3_key;size:128" json:"api_v3_key"`
 	CertSerialNo  string     `gorm:"size:64" json:"cert_serial_no"`
 	PrivateKeyPEM string     `gorm:"column:private_key_pem;type:text" json:"private_key_pem"`

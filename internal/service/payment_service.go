@@ -58,17 +58,20 @@ func (s *PaymentService) Create(ctx context.Context, memberID uint64, openID, or
 	if order.Status != model.OrderStatusPendingPay {
 		return nil, apperr.New(30010, "订单状态不可支付")
 	}
-	t, _ := s.tenants.FindByID(ctx, ctxkeys.GetTenant(ctx).ID)
+	tenantID := ctxkeys.GetTenant(ctx).ID
+	t, _ := s.tenants.FindByID(ctx, tenantID)
 	if t == nil {
 		return nil, apperr.ErrTenantInvalid
 	}
 
 	p := &model.Payment{
-		PaymentNo: utils.OrderNo("P"),
-		OrderNo:   order.OrderNo,
-		MemberID:  memberID,
-		Amount:    order.ActualAmount,
-		Status:    model.PaymentStatusPending,
+		PaymentNo:          utils.OrderNo("P"),
+		OrderNo:            order.OrderNo,
+		MemberID:           memberID,
+		Amount:             order.ActualAmount,
+		Status:             model.PaymentStatusPending,
+		PayScene:           model.PaymentSceneMemberOrder,
+		SettlementTenantID: tenantID,
 	}
 	exp := time.Now().Add(30 * time.Minute)
 	p.ExpireAt = &exp

@@ -26,15 +26,20 @@ func (h *PlatformGlobalSettingsHandler) Get(c *gin.Context) {
 }
 
 type platformGlobalSettingsBody struct {
-	PlatformName    *string `json:"platform_name"`
-	PlatformLogo    *string `json:"platform_logo"`
-	SupportPhone    *string `json:"support_phone"`
-	SupportEmail    *string `json:"support_email"`
-	WxpayAppID      *string `json:"wxpay_app_id"`
-	WxpayMchID      *string `json:"wxpay_mch_id"`
-	WxpayAPIv3Key   *string `json:"wxpay_apiv3_key"`
-	WxpayCertSerial *string `json:"wxpay_cert_serial"`
-	WxpayNotifyURL  *string `json:"wxpay_notify_url"`
+	PlatformName     *string `json:"platform_name"`
+	PlatformLogo     *string `json:"platform_logo"`
+	SupportPhone     *string `json:"support_phone"`
+	SupportEmail     *string `json:"support_email"`
+	WxpayAppID       *string `json:"wxpay_app_id"`
+	WxpayMchID       *string `json:"wxpay_mch_id"`
+	WxpayAPIv3Key    *string `json:"wxpay_apiv3_key"`
+	WxpayCertSerial  *string `json:"wxpay_cert_serial"`
+	WxpayNotifyURL   *string `json:"wxpay_notify_url"`
+	SpAppID          *string `json:"sp_appid"`
+	SpMchID          *string `json:"sp_mchid"`
+	SpAPIv3Key       *string `json:"sp_apiv3_key"`
+	SpCertSerial     *string `json:"sp_cert_serial"`
+	PartnerNotifyURL *string `json:"partner_notify_url"`
 }
 
 func (h *PlatformGlobalSettingsHandler) Update(c *gin.Context) {
@@ -70,6 +75,21 @@ func (h *PlatformGlobalSettingsHandler) Update(c *gin.Context) {
 	}
 	if b.WxpayNotifyURL != nil {
 		fields["wxpay_notify_url"] = *b.WxpayNotifyURL
+	}
+	if b.SpAppID != nil {
+		fields["sp_appid"] = *b.SpAppID
+	}
+	if b.SpMchID != nil {
+		fields["sp_mchid"] = *b.SpMchID
+	}
+	if b.SpAPIv3Key != nil {
+		fields["sp_apiv3_key"] = *b.SpAPIv3Key
+	}
+	if b.SpCertSerial != nil {
+		fields["sp_cert_serial"] = *b.SpCertSerial
+	}
+	if b.PartnerNotifyURL != nil {
+		fields["partner_notify_url"] = *b.PartnerNotifyURL
 	}
 	if err := h.repo.Upsert(c.Request.Context(), fields); err != nil {
 		response.Fail(c, err)

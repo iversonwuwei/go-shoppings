@@ -37,6 +37,7 @@ type Deps struct {
 	AdminProductH      *admin.ProductHandler
 	AdminCategoryH     *admin.CategoryHandler
 	AdminOrderH        *admin.OrderHandler
+	AdminAfterSaleH    *admin.AfterSaleHandler
 	AdminMemberH       *admin.MemberHandler
 	AdminPlatformH     *admin.PlatformHandler
 	AdminSettingsH     *admin.SettingsHandler
@@ -66,6 +67,7 @@ type Deps struct {
 	MemberProductH      *member.ProductHandler
 	MemberCategoryH     *member.CategoryHandler
 	MemberOrderH        *member.OrderHandler
+	MemberAfterSaleH    *member.AfterSaleHandler
 	MemberCouponH       *member.CouponHandler
 	MemberAddressH      *member.AddressHandler
 	MemberPointsH       *member.PointsHandler
@@ -130,6 +132,12 @@ func New(d *Deps) *gin.Engine {
 		sec.PUT("/carriers/:id", d.PlatformSettingsH.UpdateCarrier)
 		sec.PATCH("/carriers/:id/enabled", d.PlatformSettingsH.ToggleCarrier)
 		sec.DELETE("/carriers/:id", d.PlatformSettingsH.DeleteCarrier)
+
+		sec.GET("/after-sale-reasons", d.PlatformSettingsH.ListAfterSaleReasons)
+		sec.POST("/after-sale-reasons", d.PlatformSettingsH.CreateAfterSaleReason)
+		sec.PUT("/after-sale-reasons/:id", d.PlatformSettingsH.UpdateAfterSaleReason)
+		sec.PATCH("/after-sale-reasons/:id/enabled", d.PlatformSettingsH.ToggleAfterSaleReason)
+		sec.DELETE("/after-sale-reasons/:id", d.PlatformSettingsH.DeleteAfterSaleReason)
 
 		// 平台全局设置（平台名 / Logo / 平台微信支付商户号 / 客服联系方式）
 		sec.GET("/settings", d.PlatformGlobalH.Get)
@@ -319,6 +327,12 @@ func New(d *Deps) *gin.Engine {
 		adAuth.GET("/orders/:id/logs", d.AdminOrderH.Logs)
 		adAuth.POST("/orders/:id/prepare", d.AdminOrderH.Prepare)
 		adAuth.POST("/orders/:id/ship", d.AdminOrderH.Ship)
+		adAuth.GET("/after-sales", d.AdminAfterSaleH.List)
+		adAuth.GET("/after-sales/:id", d.AdminAfterSaleH.Detail)
+		adAuth.POST("/after-sales/:id/approve", d.AdminAfterSaleH.Approve)
+		adAuth.POST("/after-sales/:id/reject", d.AdminAfterSaleH.Reject)
+		adAuth.POST("/after-sales/:id/receive", d.AdminAfterSaleH.Receive)
+		adAuth.POST("/after-sales/:id/refund", d.AdminAfterSaleH.Refund)
 		adAuth.GET("/order-messages", d.AdminOrderH.Messages)
 		adAuth.POST("/order-messages/read-all", d.AdminOrderH.MarkAllMessagesRead)
 		adAuth.POST("/order-messages/:id/read", d.AdminOrderH.MarkMessageRead)
@@ -431,6 +445,7 @@ func New(d *Deps) *gin.Engine {
 	mb.GET("/categories", d.MemberCategoryH.List)
 	mb.GET("/coupons", d.MemberCouponH.Available)
 	mb.GET("/storefront/config", d.AdminSiteH.GetStorefront)
+	mb.GET("/after-sale-reasons", d.MemberAfterSaleH.Reasons)
 	mb.GET("/seckill/activities", middleware.RequireFeature(service.FeatureSeckill), d.MemberSeckillH.List)
 
 	mbAuth := mb.Group("")
@@ -449,6 +464,11 @@ func New(d *Deps) *gin.Engine {
 		mbAuth.GET("/orders/:id/express", d.MemberOrderH.Express)
 		mbAuth.POST("/orders/:id/cancel", d.MemberOrderH.Cancel)
 		mbAuth.POST("/orders/:id/confirm", d.MemberOrderH.Confirm)
+		mbAuth.POST("/orders/:id/after-sales", d.MemberAfterSaleH.Apply)
+		mbAuth.GET("/after-sales", d.MemberAfterSaleH.List)
+		mbAuth.GET("/after-sales/:id", d.MemberAfterSaleH.Detail)
+		mbAuth.POST("/after-sales/:id/return", d.MemberAfterSaleH.SubmitReturn)
+		mbAuth.POST("/after-sales/:id/cancel", d.MemberAfterSaleH.Cancel)
 
 		mbAuth.POST("/coupons/:id/receive", d.MemberCouponH.Receive)
 		mbAuth.GET("/my/coupons", d.MemberCouponH.My)
