@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"wechat-mall-saas/internal/model"
 )
@@ -70,9 +71,31 @@ func (r *DistributionRepo) FindDistributor(ctx context.Context, id uint64) (*mod
 	return &d, nil
 }
 
+func (r *DistributionRepo) FindDistributorByMemberID(ctx context.Context, memberID uint64) (*model.Distributor, error) {
+	var distributor model.Distributor
+	if err := TenantDB(ctx, r.db).Where("member_id = ?", memberID).First(&distributor).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &distributor, nil
+}
+
+func (r *DistributionRepo) CreateDistributor(ctx context.Context, distributor *model.Distributor) error {
+	distributor.TenantID = EnsureTenant(ctx)
+	return r.db.WithContext(ctx).Create(distributor).Error
+}
+
 func (r *DistributionRepo) UpdateDistributor(ctx context.Context, id uint64, fields map[string]interface{}) error {
 	return TenantDB(ctx, r.db).Model(&model.Distributor{}).
 		Where("id = ?", id).Updates(fields).Error
+}
+
+func (r *DistributionRepo) IncrementInviteCountByMemberID(ctx context.Context, memberID uint64) error {
+	return TenantDB(ctx, r.db).Model(&model.Distributor{}).
+		Where("member_id = ?", memberID).
+		UpdateColumn("invite_count", clause.Expr{SQL: "invite_count + 1"}).Error
 }
 
 // --------- Commission Logs ---------

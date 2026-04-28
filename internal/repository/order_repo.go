@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -76,17 +77,37 @@ func (r *OrderRepo) List(ctx context.Context, q OrderListQuery) ([]model.Order, 
 		tx = tx.Where("member_id = ?", q.MemberID)
 	}
 	if q.Status != "" {
-		tx = tx.Where("status = ?", q.Status)
+		statuses := splitOrderStatuses(q.Status)
+		if len(statuses) == 1 {
+			tx = tx.Where("status = ?", statuses[0])
+		} else if len(statuses) > 1 {
+			tx = tx.Where("status IN ?", statuses)
+		}
 	}
 	var total int64
 	if err := tx.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 	var rows []model.Order
-	if err := tx.Order("id DESC").Offset((q.Page - 1) * q.Size).Limit(q.Size).Find(&rows).Error; err != nil {
+	if err := tx.Preload("Items").Order("id DESC").Offset((q.Page - 1) * q.Size).Limit(q.Size).Find(&rows).Error; err != nil {
 		return nil, 0, err
 	}
 	return rows, total, nil
+}
+
+func splitOrderStatuses(raw string) []string {
+	parts := strings.Split(raw, ",")
+	statuses := make([]string, 0, len(parts))
+	seen := map[string]bool{}
+	for _, part := range parts {
+		status := strings.TrimSpace(part)
+		if status == "" || seen[status] {
+			continue
+		}
+		seen[status] = true
+		statuses = append(statuses, status)
+	}
+	return statuses
 }
 
 func (r *OrderRepo) UpdateStatus(ctx context.Context, id uint64, from, to string, setAt map[string]interface{}) error {

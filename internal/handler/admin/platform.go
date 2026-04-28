@@ -2,7 +2,6 @@ package admin
 
 import (
 	"strconv"
-	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -88,8 +87,8 @@ func (h *PlatformHandler) UpdateTenantStatus(c *gin.Context) {
 }
 
 type updateTenantPlanReq struct {
-	PlanID       uint64     `json:"plan_id"`
-	PlanExpireAt *time.Time `json:"plan_expire_at,omitempty"`
+	PlanID       uint64       `json:"plan_id"`
+	PlanExpireAt *requestTime `json:"plan_expire_at,omitempty"`
 }
 
 func (h *PlatformHandler) UpdateTenantPlan(c *gin.Context) {
@@ -99,7 +98,7 @@ func (h *PlatformHandler) UpdateTenantPlan(c *gin.Context) {
 		response.FailCode(c, 20001, err.Error())
 		return
 	}
-	if err := h.tenant.SetPlan(c.Request.Context(), id, body.PlanID, body.PlanExpireAt); err != nil {
+	if err := h.tenant.SetPlan(c.Request.Context(), id, body.PlanID, requestTimePtr(body.PlanExpireAt)); err != nil {
 		response.Fail(c, err)
 		return
 	}

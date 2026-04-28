@@ -4,6 +4,7 @@ logs/
 uploads/
 *.log
 .env
+.token_tmp
 coverage.out
 coverage.html
 vendor/

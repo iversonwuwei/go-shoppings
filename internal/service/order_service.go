@@ -16,12 +16,12 @@ import (
 )
 
 type OrderService struct {
-	orders    *repository.OrderRepo
-	logs      *repository.OrderLogRepo
-	messages  *repository.OrderMessageRepo
-	products  *repository.ProductRepo
-	skus      *repository.ProductSKURepo
-	tenants   *TenantService
+	orders   *repository.OrderRepo
+	logs     *repository.OrderLogRepo
+	messages *repository.OrderMessageRepo
+	products *repository.ProductRepo
+	skus     *repository.ProductSKURepo
+	tenants  *TenantService
 }
 
 func NewOrderService(o *repository.OrderRepo, l *repository.OrderLogRepo, m *repository.OrderMessageRepo, p *repository.ProductRepo, s *repository.ProductSKURepo, t *TenantService) *OrderService {
@@ -50,19 +50,20 @@ type OrderCreateInput struct {
 }
 
 type orderTransitionInput struct {
-	TenantID      uint64
-	OrderID       uint64
-	OrderNo       string
-	AllowedFrom   []string
-	ToStatus      string
-	Fields        map[string]interface{}
-	OperatorType  string
-	OperatorID    uint64
-	Action        string
-	Remark        string
-	MessageType   string
-	MessageTitle  string
-	MessageBody   string
+	TenantID     uint64
+	OrderID      uint64
+	OrderNo      string
+	MemberID     uint64
+	AllowedFrom  []string
+	ToStatus     string
+	Fields       map[string]interface{}
+	OperatorType string
+	OperatorID   uint64
+	Action       string
+	Remark       string
+	MessageType  string
+	MessageTitle string
+	MessageBody  string
 }
 
 func containsStatus(statuses []string, target string) bool {
@@ -91,6 +92,9 @@ func (s *OrderService) transition(ctx context.Context, input orderTransitionInpu
 			query = query.Where("id = ?", input.OrderID)
 		} else {
 			query = query.Where("order_no = ?", input.OrderNo)
+		}
+		if input.MemberID > 0 {
+			query = query.Where("member_id = ?", input.MemberID)
 		}
 		if err := query.First(&order).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
@@ -282,6 +286,7 @@ func (s *OrderService) Cancel(ctx context.Context, id, memberID uint64) error {
 	now := time.Now()
 	return s.transition(ctx, orderTransitionInput{
 		OrderID:      id,
+		MemberID:     memberID,
 		AllowedFrom:  []string{model.OrderStatusPendingPay},
 		ToStatus:     model.OrderStatusCancelled,
 		Fields:       map[string]interface{}{"cancelled_at": now},
@@ -298,6 +303,7 @@ func (s *OrderService) Confirm(ctx context.Context, id, memberID uint64) error {
 	now := time.Now()
 	return s.transition(ctx, orderTransitionInput{
 		OrderID:      id,
+		MemberID:     memberID,
 		AllowedFrom:  []string{model.OrderStatusShipped, model.OrderStatusDelivered},
 		ToStatus:     model.OrderStatusCompleted,
 		Fields:       map[string]interface{}{"completed_at": now},
@@ -307,6 +313,22 @@ func (s *OrderService) Confirm(ctx context.Context, id, memberID uint64) error {
 		MessageType:  "order_completed",
 		MessageTitle: "订单已完成",
 		MessageBody:  fmt.Sprintf("订单 #%d 已由买家确认收货。", id),
+	})
+}
+
+func (s *OrderService) Prepare(ctx context.Context, id uint64, adminID uint64) error {
+	now := time.Now()
+	return s.transition(ctx, orderTransitionInput{
+		OrderID:      id,
+		AllowedFrom:  []string{model.OrderStatusPaid},
+		ToStatus:     model.OrderStatusPreparing,
+		Fields:       map[string]interface{}{"updated_at": now},
+		OperatorType: "admin",
+		OperatorID:   adminID,
+		Action:       "prepare",
+		MessageType:  "order_preparing",
+		MessageTitle: "订单处理中",
+		MessageBody:  fmt.Sprintf("订单 #%d 已开始处理，商家正在备货。", id),
 	})
 }
 

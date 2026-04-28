@@ -103,9 +103,9 @@ func main() {
 	productSvc := service.NewProductService(productRepo, skuRepo, categoryRepo, tenantSvc)
 	categorySvc := service.NewCategoryService(categoryRepo, tenantCategoryAssetRepo)
 	orderSvc := service.NewOrderService(orderRepo, orderLogRepo, orderMessageRepo, productRepo, skuRepo, tenantSvc)
-	paymentSvc := service.NewPaymentService(paymentRepo, orderRepo, orderLogRepo, orderSvc, tenantRepo, memberRepo, pointsLogRepo, pointsSettingsRepo, tenantSvc)
+	paymentSvc := service.NewPaymentService(paymentRepo, orderRepo, orderLogRepo, orderSvc, tenantRepo, memberRepo, pointsLogRepo, pointsSettingsRepo, tenantSvc, cfg.App.Env)
 	couponSvc := service.NewCouponService(couponRepo, memberCouponRepo, tenantSvc)
-	memberSvc := service.NewMemberService(memberRepo, memberAddressRepo, pointsLogRepo)
+	memberSvc := service.NewMemberService(memberRepo, memberAddressRepo, pointsLogRepo, memberLevelRepo)
 	settingsSvc := service.NewSettingsService(paymentConfigRepo, carrierRepo, tenantSvc)
 	platformWxpay := wxpay.NewClient(wxpay.Config{
 		AppID:      cfg.WxPay.AppID,
@@ -135,6 +135,7 @@ func main() {
 		AdminProductH:      admin.NewProductHandler(productSvc),
 		AdminCategoryH:     admin.NewCategoryHandler(categorySvc),
 		AdminOrderH:        admin.NewOrderHandler(orderSvc),
+		AdminMemberH:       admin.NewMemberHandler(memberSvc),
 		AdminPlatformH:     admin.NewPlatformHandler(tenantSvc, tenantRepo, planRepo, planFeatureRepo),
 		AdminSettingsH:     admin.NewSettingsHandler(settingsSvc),
 		AdminMemberLvlH:    admin.NewMemberLevelHandler(memberLevelRepo),
@@ -158,15 +159,16 @@ func main() {
 		PlatformDeploymentH: admin.NewPlatformDeploymentHandler(siteRepo),
 		PlatformStorefrontH: admin.NewPlatformStorefrontHandler(siteRepo),
 
-		MemberAuthH:     member.NewAuthHandler(authSvc, tenantRepo),
-		MemberProductH:  member.NewProductHandler(productSvc),
-		MemberCategoryH: member.NewCategoryHandler(categorySvc),
-		MemberOrderH:    member.NewOrderHandler(orderSvc),
-		MemberCouponH:   member.NewCouponHandler(couponSvc),
-		MemberAddressH:  member.NewAddressHandler(memberSvc),
-		MemberPointsH:   member.NewPointsHandler(memberSvc),
-		MemberMemberH:   member.NewMemberHandler(memberSvc),
-		MemberSeckillH:  member.NewSeckillHandler(seckillRepo),
+		MemberAuthH:         member.NewAuthHandler(authSvc, tenantRepo),
+		MemberProductH:      member.NewProductHandler(productSvc),
+		MemberCategoryH:     member.NewCategoryHandler(categorySvc),
+		MemberOrderH:        member.NewOrderHandler(orderSvc),
+		MemberCouponH:       member.NewCouponHandler(couponSvc),
+		MemberAddressH:      member.NewAddressHandler(memberSvc),
+		MemberPointsH:       member.NewPointsHandler(memberSvc),
+		MemberMemberH:       member.NewMemberHandler(memberSvc),
+		MemberSeckillH:      member.NewSeckillHandler(seckillRepo),
+		MemberDistributionH: member.NewDistributionHandler(distributionRepo, memberRepo),
 
 		PaymentH: handler.NewPaymentHandler(paymentSvc),
 

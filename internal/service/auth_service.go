@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"math/big"
+	"strings"
 	"time"
 
 	"wechat-mall-saas/internal/model"
@@ -63,6 +64,23 @@ type MemberLoginResult struct {
 	Member *model.Member `json:"member"`
 }
 
+type WechatMemberLoginInput struct {
+	Code     string
+	Nickname string
+	Avatar   string
+	Gender   int8
+}
+
+const (
+	devWechatOpenID     = "dev-wechat-local"
+	devWechatUnionID    = "dev-wechat-local"
+	devWechatSessionKey = "dev-wechat-session"
+)
+
+func (s *AuthService) AllowMemberDevLogin() bool {
+	return s.env != "production"
+}
+
 func (s *AuthService) MemberDevLogin(ctx context.Context, phone, nickname string) (*MemberLoginResult, error) {
 	if s.env == "production" {
 		return nil, apperr.New(10002, "当前环境不支持开发登录")
@@ -82,12 +100,14 @@ func (s *AuthService) MemberDevLogin(ctx context.Context, phone, nickname string
 				nickname = "演示用户"
 			}
 		}
+		now := time.Now()
 		m = &model.Member{
-			OpenID:     "dev-" + utils.RandHex(8),
-			Phone:      phone,
-			Nickname:   nickname,
-			Status:     1,
-			SessionKey: "dev-session",
+			OpenID:      "dev-" + utils.RandHex(8),
+			Phone:       phone,
+			Nickname:    nickname,
+			Status:      1,
+			SessionKey:  "dev-session",
+			LastLoginAt: &now,
 		}
 		if err := s.members.Create(ctx, m); err != nil {
 			return nil, err
@@ -96,10 +116,16 @@ func (s *AuthService) MemberDevLogin(ctx context.Context, phone, nickname string
 		if m.Status != 1 {
 			return nil, apperr.New(10010, "账号不存在或被禁用")
 		}
+		now := time.Now()
+		fields := map[string]interface{}{"last_login_at": now, "updated_at": now}
 		if nickname != "" && nickname != m.Nickname {
-			if err := s.members.UpdateFields(ctx, m.ID, map[string]interface{}{"nickname": nickname}); err != nil {
-				return nil, err
-			}
+			fields["nickname"] = nickname
+		}
+		if err := s.members.UpdateFields(ctx, m.ID, fields); err != nil {
+			return nil, err
+		}
+		m.LastLoginAt = &now
+		if nickname != "" {
 			m.Nickname = nickname
 		}
 	}
@@ -111,29 +137,80 @@ func (s *AuthService) MemberDevLogin(ctx context.Context, phone, nickname string
 }
 
 // MemberLoginByWechat 通过 code 登录/注册。wx 为租户对应的 wxapp.Client。
-func (s *AuthService) MemberLoginByWechat(ctx context.Context, wx *wxapp.Client, code string) (*MemberLoginResult, error) {
-	sess, err := wx.Code2Session(code)
+func (s *AuthService) MemberLoginByWechat(ctx context.Context, wx *wxapp.Client, input WechatMemberLoginInput) (*MemberLoginResult, error) {
+	if strings.TrimSpace(input.Code) == "" {
+		return nil, apperr.ErrParamInvalid
+	}
+	sess, err := wx.Code2Session(input.Code)
 	if err != nil {
 		return nil, apperr.ErrWechatAPI
 	}
+	return s.memberLoginByWechatSession(ctx, sess, input)
+}
+
+func (s *AuthService) MemberDevLoginByWechat(ctx context.Context, input WechatMemberLoginInput) (*MemberLoginResult, error) {
+	if !s.AllowMemberDevLogin() {
+		return nil, apperr.New(10002, "当前环境不支持开发登录")
+	}
+	if strings.TrimSpace(input.Code) == "" {
+		return nil, apperr.ErrParamInvalid
+	}
+	return s.memberLoginByWechatSession(ctx, &wxapp.Code2SessionResp{
+		OpenID:     devWechatOpenID,
+		UnionID:    devWechatUnionID,
+		SessionKey: devWechatSessionKey,
+	}, input)
+}
+
+func (s *AuthService) memberLoginByWechatSession(ctx context.Context, sess *wxapp.Code2SessionResp, input WechatMemberLoginInput) (*MemberLoginResult, error) {
+	if sess == nil || strings.TrimSpace(sess.OpenID) == "" {
+		return nil, apperr.ErrWechatAPI
+	}
+	now := time.Now()
 	m, err := s.members.FindByOpenID(ctx, sess.OpenID)
 	if err != nil {
 		return nil, err
 	}
 	if m == nil {
 		m = &model.Member{
-			OpenID:     sess.OpenID,
-			UnionID:    sess.UnionID,
-			SessionKey: sess.SessionKey,
-			Status:     1,
+			OpenID:      sess.OpenID,
+			UnionID:     sess.UnionID,
+			SessionKey:  sess.SessionKey,
+			Nickname:    strings.TrimSpace(input.Nickname),
+			Avatar:      strings.TrimSpace(input.Avatar),
+			Gender:      input.Gender,
+			Status:      1,
+			LastLoginAt: &now,
 		}
 		if err := s.members.Create(ctx, m); err != nil {
 			return nil, err
 		}
 	} else {
-		_ = s.members.UpdateFields(ctx, m.ID, map[string]interface{}{
-			"session_key": sess.SessionKey,
-		})
+		if m.Status != 1 {
+			return nil, apperr.New(10010, "账号不存在或被禁用")
+		}
+		fields := map[string]interface{}{"session_key": sess.SessionKey, "last_login_at": now, "updated_at": now}
+		if m.UnionID == "" && sess.UnionID != "" {
+			fields["unionid"] = sess.UnionID
+			m.UnionID = sess.UnionID
+		}
+		if nickname := strings.TrimSpace(input.Nickname); nickname != "" {
+			fields["nickname"] = nickname
+			m.Nickname = nickname
+		}
+		if avatar := strings.TrimSpace(input.Avatar); avatar != "" {
+			fields["avatar"] = avatar
+			m.Avatar = avatar
+		}
+		if input.Gender > 0 {
+			fields["gender"] = input.Gender
+			m.Gender = input.Gender
+		}
+		if err := s.members.UpdateFields(ctx, m.ID, fields); err != nil {
+			return nil, err
+		}
+		m.SessionKey = sess.SessionKey
+		m.LastLoginAt = &now
 	}
 	tok, err := s.jwt.Issue(jwtx.SubjectMember, m.ID, m.TenantID, m.OpenID)
 	if err != nil {

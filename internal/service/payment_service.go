@@ -24,20 +24,23 @@ type PaymentService struct {
 	pointsLogs *repository.PointsLogRepo
 	pointsCfg  *repository.PointsSettingsRepo
 	tenantSvc  *TenantService
+	env        string
 }
 
 func NewPaymentService(
 	p *repository.PaymentRepo, o *repository.OrderRepo, l *repository.OrderLogRepo,
 	os *OrderService,
 	t *repository.TenantRepo, m *repository.MemberRepo, pl *repository.PointsLogRepo,
-	ps *repository.PointsSettingsRepo, ts *TenantService,
+	ps *repository.PointsSettingsRepo, ts *TenantService, env string,
 ) *PaymentService {
-	return &PaymentService{payments: p, orders: o, logs: l, orderSvc: os, tenants: t, members: m, pointsLogs: pl, pointsCfg: ps, tenantSvc: ts}
+	return &PaymentService{payments: p, orders: o, logs: l, orderSvc: os, tenants: t, members: m, pointsLogs: pl, pointsCfg: ps, tenantSvc: ts, env: env}
 }
 
 type CreatePaymentResult struct {
 	PaymentNo string                `json:"payment_no"`
 	PayParams *wxpay.JSAPIPayParams `json:"pay_params,omitempty"`
+	MockPaid  bool                  `json:"mock_paid"`
+	Status    string                `json:"status"`
 }
 
 // Create 创建支付单并向微信统一下单，返回小程序支付参数
@@ -72,6 +75,12 @@ func (s *PaymentService) Create(ctx context.Context, memberID uint64, openID, or
 	if err := s.payments.Create(ctx, p); err != nil {
 		return nil, err
 	}
+	if s.env != "production" {
+		if err := s.markPaymentPaid(ctx, p, order, openID, "MOCK-"+p.PaymentNo); err != nil {
+			return nil, err
+		}
+		return &CreatePaymentResult{PaymentNo: p.PaymentNo, MockPaid: true, Status: model.PaymentStatusPaid}, nil
+	}
 
 	wx := wxpay.NewClient(wxpay.Config{
 		AppID:      t.WechatAppID,
@@ -89,7 +98,30 @@ func (s *PaymentService) Create(ctx context.Context, memberID uint64, openID, or
 	if err != nil {
 		return nil, apperr.ErrWechatPay
 	}
-	return &CreatePaymentResult{PaymentNo: p.PaymentNo, PayParams: params}, nil
+	return &CreatePaymentResult{PaymentNo: p.PaymentNo, PayParams: params, Status: model.PaymentStatusPending}, nil
+}
+
+func (s *PaymentService) markPaymentPaid(ctx context.Context, p *model.Payment, order *model.Order, openID, transactionID string) error {
+	if s.orderSvc != nil {
+		if err := s.orderSvc.MarkPaid(ctx, p.TenantID, p.OrderNo, order.IsVirtual == 1); err != nil {
+			return err
+		}
+	}
+	now := time.Now()
+	if err := s.payments.UpdateFields(ctx, p.ID, map[string]interface{}{
+		"status":                model.PaymentStatusPaid,
+		"wechat_transaction_id": transactionID,
+		"wechat_payer_openid":   openID,
+		"wechat_paid_at":        now,
+	}); err != nil {
+		return err
+	}
+	p.Status = model.PaymentStatusPaid
+	p.WechatTransactionID = transactionID
+	p.WechatPayerOpenID = openID
+	p.WechatPaidAt = &now
+	s.grantPoints(ctx, p)
+	return nil
 }
 
 // HandleCallback 处理微信支付回调（已验签/解密后的 TransactionInfo）

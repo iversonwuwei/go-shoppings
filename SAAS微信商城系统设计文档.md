@@ -294,6 +294,12 @@ tenant_id + product_id，sku_code 在租户内唯一，attributes(JSON 规格组
 
 tenant_id + openid 唯一，含 level_id（会员等级）、points、growth_value、parent_id（推荐人）、level1_count、level2_count
 
+租户后台会员管理必须以当前登录商户的 `tenant_id` 为边界：商户只能分页查看、筛选、启用/禁用、查看详情和调整自己租户下的会员。会员详情可展示基础资料、收货地址和最近积分明细；禁用会员后，会员端再次登录或继续访问需要鉴权的会员接口时必须被拦截，避免禁用只停留在后台展示层。会员等级调整属于 `member_level` 功能范围；未开通该功能的租户仍可使用会员列表、详情和状态管理。
+
+小程序端会员登录以当前租户下微信用户的 `openid` 为身份主键：微信用户进入商城后调用 `wx.login` 获取 code，后端向微信换取 openid；若当前租户已存在该 openid 的会员，则读取并刷新该会员的会话、微信资料和最近登录时间；若不存在，则自动创建会员后签发会员 Token，并继续执行用户原本要完成的浏览、领券、下单、查看订单等操作。手机号属于后续授权绑定资料，不是微信登录/自动注册的前置条件；数据库唯一约束只能限制已绑定手机号的会员，不能阻塞多个未绑定手机号的微信会员注册。
+
+本地开发环境（`app.env != production`）允许租户暂未配置微信小程序 AppID/Secret：`login-by-wechat` 会降级为开发微信会员登录，使用当前租户内固定的本地 openid 创建或读取会员，便于开发者工具调试登录后流程。生产环境必须配置租户微信小程序，不能启用该降级路径。
+
 #### member_levels（会员等级表）
 
 含 tenant_id，min_growth（成长值门槛）、discount_rate（折扣率）、points_mult（积分倍数）
@@ -308,7 +314,7 @@ tenant_id + member_id，含 change_type(order/gift/sign/refund/manual)、change_
 
 tenant_id + member_id + order_no(唯一)
 
-状态流：pending_pay → paid → preparing → shipped → delivered → completed
+状态流：pending_pay（待支付）→ paid / preparing（待发货）→ shipped / delivered（待收货/待确认）→ completed
 取消/退款：cancelled / refunding / refunded
 
 含完整的收货信息（receiver_*）、配送信息（express_company, express_no, self_pickup_code）、金额明细（total_amount, delivery_fee, discount_amount, coupon_id, points_discount, actual_amount）
@@ -406,6 +412,7 @@ tenant_id + member_id，payment_no(唯一)，含 wechat_transaction_id、refund_
 - 租户标识：`Header X-Tenant-ID: {tenant_id}`
 - 请求/响应：`JSON`
 - 响应格式：`{ code: 0, message: "success", data: {} }`
+- 时间入参：管理端所有时间字段优先使用 RFC3339 / RFC3339Nano（如 `2026-04-27T00:00:00+08:00`）；为兼容 Element Plus 日期选择器和历史前端，后端同时接受 `YYYY-MM-DDTHH:mm:ss`、`YYYY-MM-DD HH:mm:ss`、`YYYY-MM-DD`，无时区格式按服务本地时区解析。涉及优惠券、秒杀、拼团、租户套餐到期时间等字段时，前端默认提交带时区格式。
 
 ### 4.2 接口列表
 
@@ -438,6 +445,13 @@ tenant_id + member_id，payment_no(唯一)，含 wechat_transaction_id、refund_
 | GET | /api/v1/member/points/logs | 积分明细 |
 | GET | /api/v1/member/coupons | 我的优惠券 |
 | GET | /api/v1/member/distribution | 分销中心 |
+| POST | /api/v1/member/distribution/apply | 申请成为分销员 |
+| POST | /api/v1/member/distribution/bind | 绑定邀请人 |
+| GET | /api/v1/member/distribution/commissions | 我的佣金记录 |
+
+`POST /api/v1/member/auth/login-by-wechat` 请求体至少包含 `code`，可同时携带 `nickname`、`avatar`、`gender`。响应返回 `{ token, member }`：`member` 为当前租户下匹配 openid 的既有会员，或本次自动创建的新会员。若会员已被商户禁用，登录和会员端鉴权接口均返回认证错误，前端应清理本租户会员会话并引导重新登录或联系商户。开发环境下，如果当前租户未配置微信小程序 AppID/Secret，该接口不调用微信 `code2session`，而是使用固定本地 openid 走同一套会员读取/自动注册流程；生产环境仍返回“租户未配置微信小程序”。
+
+会员端分销接口必须位于会员鉴权之后，并受 `distribution` 套餐功能开关保护。`GET /api/v1/member/distribution` 返回 `{ settings, distributor, can_apply, invite_code, bound_parent_id }`，供个人中心展示佣金、申请状态和邀请路径；`POST /api/v1/member/distribution/apply` 幂等创建当前会员的分销员申请；`POST /api/v1/member/distribution/bind` 使用 `inviter_member_id` 绑定上级分销员会员 ID，已绑定后不可重复改绑；`GET /api/v1/member/distribution/commissions` 只返回当前会员作为分销员产生的佣金记录。未开通分销功能时返回套餐功能错误，前端展示“暂未开通”，不能表现为 404；如果店铺配置没有展示分销模块，会员中心不应主动请求分销接口，避免可选功能在控制台反复输出业务 warning。
 
 #### 小程序端 - 商品
 
@@ -453,17 +467,39 @@ tenant_id + member_id，payment_no(唯一)，含 wechat_transaction_id、refund_
 
 小程序分类页 `/pages/catalog/index`：默认“全部商品”不传 `category_id`、`keyword` 和推荐/热门模式，首屏加载第 1 页；用户触底时按相同筛选条件递增 `page` 批量追加，直到已加载数量达到 `total`。切换分类、搜索词、热门/推荐筛选时必须重置列表和页码，重新从第 1 页加载；空态仅在第 1 页无数据时展示。
 
+#### 小程序端 - 店铺配置与主题
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | /api/v1/public/tenant/resolve?code={tenant_code} | 解析租户摘要，返回 `id`、`code`、`brand_name`、`brand_theme` 等启动所需字段 |
+| GET | /api/v1/member/storefront/config | 获取当前租户小程序店铺配置，返回 `primary_color`、首页模块、会员中心入口等前台配置 |
+
+小程序主题色优先级：`member/storefront/config.primary_color` > `public/tenant/resolve.brand_theme` > 默认色 `#FF6B4A`。主题色兼容 `#RRGGBB`、`#RGB` 和 `rgb(...)` 格式；小程序启动时先解析租户并缓存摘要；进入页面或拉取店铺配置后，将主题色转换为 CSS 变量，应用到页面背景、主按钮、价格、标签、优惠券、会员中心头图、分类筛选、购物车结算按钮和自定义 TabBar 激活态。
+
+产品约束：同一租户内前台所有页面必须保持一致主题；切换租户后必须清理旧租户会员会话并刷新主题；接口失败或主题色格式非法时必须回退默认主题，不能阻断商品浏览、登录、下单等核心流程。
+
+会员中心快捷入口使用短路径契约：订单 `/orders`、优惠券 `/coupons`、收货地址 `/addresses`、购物车 `/cart`。其中“收货地址”必须跳转到地址列表页，不允许配置为 `/profile`；小程序端需要对后台配置做路径归一化，避免历史配置或误配置导致点击后停留在会员中心。
+
+设计约束：主题色只作为品牌主色和关键行动色，不覆盖文本层级、卡片白底、危险提示色和成功/失败状态色；由主色派生浅色背景、深色强调、阴影色和渐变色，保证按钮文字始终使用白色并保持可读性。
+
+请求可靠性：小程序请求必须设置明确超时时间，并在失败日志中输出业务路径、耗时和错误原因；启动期租户解析、店铺配置、首页数据存在并发触发场景，店铺配置需要按租户做短周期缓存和 in-flight 去重，避免 App `onLaunch`、`onShow` 与首页加载重复请求导致开发工具出现 `timeout` 噪音。对于未开通套餐功能等可预期业务拒绝，调用方可显式声明静默业务码，避免可选模块反复输出 warning，但仍需保留真实网络失败和非预期业务错误日志。
+
 #### 小程序端 - 订单
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | /api/v1/orders | 创建订单 |
-| GET | /api/v1/orders | 订单列表 |
-| GET | /api/v1/orders/{id}/detail | 订单详情（含商品明细） |
-| POST | /api/v1/orders/{id}/cancel | 取消订单 |
-| POST | /api/v1/orders/{id}/confirm | 确认收货 |
-| POST | /api/v1/orders/{id}/apply-refund | 申请退款 |
-| GET | /api/v1/orders/{id}/express | 物流查询 |
+| POST | /api/v1/member/orders | 创建订单 |
+| GET | /api/v1/member/orders | 订单列表（含商品明细，支持 `status` 单值或逗号分隔分组） |
+| GET | /api/v1/member/orders/{id} | 订单详情（含商品明细） |
+| GET | /api/v1/member/orders/{id}/express | 订单物流轨迹 |
+| POST | /api/v1/member/orders/{id}/cancel | 取消订单 |
+| POST | /api/v1/member/orders/{id}/confirm | 确认收货 |
+
+小程序“我的订单”必须以会员自己的订单为边界，列表接口需要返回 `items` 商品明细，列表页至少展示订单号、状态、首件商品、总件数、创建时间和实付金额。状态筛选采用分组语义：待支付 `pending_pay`，待发货 `paid,preparing`，待收货 `shipped,delivered`，已完成 `completed`，已取消 `cancelled`；已发货或已送达状态都允许会员在详情页确认收货。
+
+订单主流程为：会员确认订单后创建 `pending_pay` 订单并保留入库；结账页跳转到订单详情，会员可支付或取消。待支付订单从订单列表再次点击也必须进入详情页并展示“支付订单 / 取消订单”动作。支付成功后订单进入 `paid`，商户在管理端执行“开始处理”进入 `preparing`，完成拣货后发货并写入物流公司和运单号进入 `shipped`；会员可在详情页查看物流跟踪，收到货后确认收货，订单进入 `completed` 并结束。开发环境没有真实微信支付配置时，支付接口允许返回并执行开发模拟支付，但生产环境必须通过微信 JSAPI 支付参数和回调推进支付成功状态。
+
+小程序结账页如果订单包含实物商品，只展示当前已选择的一条收货地址信息，不在确认订单页展开全部地址列表；如需更换地址，会员点击“选择或管理收货地址”进入地址选择页。由结账页进入地址管理时使用选择模式：地址页必须展示当前已选地址状态，会员点选目标地址后再点击“确认使用该地址”完成更换并返回结账页；新增地址成功后可直接作为当前订单地址并自动返回。如果小程序页面栈导致 `navigateTo` 失败，需要降级为 `redirectTo` 并在地址页选择完成后回到结账页。从个人中心进入地址管理时保持普通管理模式，只新增/查看地址，不强制返回结账。未登录进入地址页时，登录完成后需要回到原地址页模式，不能丢失选择流程。
 
 #### 小程序端 - 营销
 
@@ -482,8 +518,7 @@ tenant_id + member_id，payment_no(唯一)，含 wechat_transaction_id、refund_
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | /api/v1/payments/create | 创建支付（返回支付参数） |
-| POST | /api/v1/payments/query/{payment_no} | 查询支付状态 |
+| POST | /api/v1/member/payments | 创建会员订单支付（生产返回 JSAPI 支付参数；开发可模拟支付成功） |
 | POST | /api/v1/payments/callback/wechat | 微信支付回调 |
 
 #### 管理端 - 商品
@@ -504,10 +539,21 @@ tenant_id + member_id，payment_no(唯一)，含 wechat_transaction_id、refund_
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | /api/v1/admin/orders | 订单列表（多条件） |
-| PUT | /api/v1/admin/orders/{id}/status | 修改状态 |
+| POST | /api/v1/admin/orders/{id}/prepare | 开始处理订单（paid → preparing） |
 | POST | /api/v1/admin/orders/{id}/ship | 发货 |
 | POST | /api/v1/admin/orders/{id}/refund | 同意/拒绝退款 |
 | GET | /api/v1/admin/orders/export | 导出Excel |
+
+#### 管理端 - 会员
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | /api/v1/admin/members | 当前租户会员列表，支持 `page`、`size`、`keyword`、`status`、`level_id` 筛选 |
+| GET | /api/v1/admin/members/{id} | 当前租户会员详情，返回基础资料、收货地址和最近积分明细 |
+| PATCH | /api/v1/admin/members/{id}/status | 启用/禁用当前租户会员，`status` 取值 `1`/`0` |
+| PATCH | /api/v1/admin/members/{id}/level | 调整或清空当前租户会员等级，需开通 `member_level` 功能 |
+
+会员管理接口必须经过租户中间件和管理员鉴权，Repository 查询必须自动携带或显式携带当前 `tenant_id` 条件。列表响应统一为 `{ list, total, page, size }`；会员等级仅作为可选增强能力，不影响基础会员管理流程。
 
 #### 管理端 - 优惠券/拼团/秒杀/分销（CRUD + 统计）
 
@@ -561,6 +607,7 @@ tenant_id + member_id，payment_no(唯一)，含 wechat_transaction_id、refund_
    - 解密后处理：
      更新payment状态 → 更新order状态 → 扣库存 → 发积分 → 计算分佣
    - 返回 HTTP 200 + {"code":"SUCCESS","message":"SUCCESS"}
+4. 本地开发环境无真实微信支付配置时，`POST /api/v1/member/payments` 可创建支付记录并模拟支付成功，用于验证“待支付 → 待发货 → 处理中 → 已发货 → 已完成”的页面和接口链路；该能力不得作为生产支付替代。
 ```
 
 ### 5.3 小程序多租户方案

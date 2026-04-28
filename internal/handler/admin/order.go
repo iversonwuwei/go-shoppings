@@ -53,6 +53,19 @@ func (h *OrderHandler) Logs(c *gin.Context) {
 	response.OK(c, rows)
 }
 
+func (h *OrderHandler) Prepare(c *gin.Context) {
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+	var adminID uint64
+	if a := ctxkeys.GetAdmin(c.Request.Context()); a != nil {
+		adminID = a.ID
+	}
+	if err := h.svc.Prepare(c.Request.Context(), id, adminID); err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, nil)
+}
+
 func (h *OrderHandler) Ship(c *gin.Context) {
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
 	var body struct {

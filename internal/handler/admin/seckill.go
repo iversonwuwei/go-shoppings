@@ -2,7 +2,6 @@ package admin
 
 import (
 	"strconv"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/shopspring/decimal"
@@ -28,8 +27,8 @@ type seckillProductReq struct {
 
 type seckillReq struct {
 	Name       string              `json:"name" binding:"required,max=100"`
-	StartAt    time.Time           `json:"start_at" binding:"required"`
-	EndAt      time.Time           `json:"end_at" binding:"required"`
+	StartAt    requestTime         `json:"start_at" binding:"required"`
+	EndAt      requestTime         `json:"end_at" binding:"required"`
 	PerLimit   int                 `json:"per_limit" binding:"min=1"`
 	TotalStock int                 `json:"total_stock" binding:"min=1"`
 	Status     int8                `json:"status"`
@@ -51,12 +50,16 @@ func (h *SeckillHandler) Create(c *gin.Context) {
 		response.FailCode(c, 20001, err.Error())
 		return
 	}
-	if !req.EndAt.After(req.StartAt) {
+	if req.StartAt.IsZero() || req.EndAt.IsZero() {
+		response.FailCode(c, 20001, "请选择活动时间")
+		return
+	}
+	if !req.EndAt.After(req.StartAt.Time) {
 		response.FailCode(c, 20001, "结束时间必须晚于开始时间")
 		return
 	}
 	a := &model.SeckillActivity{
-		Name: req.Name, StartAt: req.StartAt, EndAt: req.EndAt,
+		Name: req.Name, StartAt: req.StartAt.Time, EndAt: req.EndAt.Time,
 		PerLimit: defaultInt(req.PerLimit, 1), TotalStock: req.TotalStock,
 		Status: defaultStatus(req.Status),
 	}
@@ -88,13 +91,17 @@ func (h *SeckillHandler) Update(c *gin.Context) {
 		response.FailCode(c, 20001, err.Error())
 		return
 	}
-	if !req.EndAt.After(req.StartAt) {
+	if req.StartAt.IsZero() || req.EndAt.IsZero() {
+		response.FailCode(c, 20001, "请选择活动时间")
+		return
+	}
+	if !req.EndAt.After(req.StartAt.Time) {
 		response.FailCode(c, 20001, "结束时间必须晚于开始时间")
 		return
 	}
 	exist.Name = req.Name
-	exist.StartAt = req.StartAt
-	exist.EndAt = req.EndAt
+	exist.StartAt = req.StartAt.Time
+	exist.EndAt = req.EndAt.Time
 	exist.PerLimit = defaultInt(req.PerLimit, 1)
 	exist.TotalStock = req.TotalStock
 	exist.Status = defaultStatus(req.Status)

@@ -106,7 +106,7 @@ func defaultSiteConfig(tid uint64) *model.TenantSiteConfig {
 		StorefrontServiceCards:      `[{"title":"新人专享","desc":"满 99 减 10 / 周末折扣券已开放"},{"title":"会员体验","desc":"登录后可直接领券、下单、查看订单"}]`,
 		StorefrontBanners:           `[{"title":"新人首单礼","subtitle":"登录领取专享优惠券包","image":"https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=1200&q=80","path":"/coupons"},{"title":"当季热卖","subtitle":"热销水果 / 零食 / 组合装每日更新","image":"https://images.unsplash.com/photo-1516684732162-798a0062be99?auto=format&fit=crop&w=1200&q=80","path":"/catalog?source=hot"}]`,
 		StorefrontPromoCards:        `[{"title":"限时秒杀","subtitle":"每日 10 点 / 20 点上新","tag":"今日必抢","path":"/catalog?source=hot"},{"title":"会员专区","subtitle":"积分权益 / 福利券 / 订单服务","tag":"会员优先","path":"/profile"}]`,
-		StorefrontMemberEntries:     `[{"title":"我的订单","subtitle":"待支付 / 售后进度","path":"/orders"},{"title":"优惠券","subtitle":"查看已领取福利","path":"/coupons"},{"title":"收货地址","subtitle":"管理常用地址","path":"/profile"},{"title":"购物车","subtitle":"快捷去结算","path":"/cart"}]`,
+		StorefrontMemberEntries:     `[{"title":"我的订单","subtitle":"待支付 / 售后进度","path":"/orders"},{"title":"优惠券","subtitle":"查看已领取福利","path":"/coupons"},{"title":"收货地址","subtitle":"管理常用地址","path":"/addresses"},{"title":"购物车","subtitle":"快捷去结算","path":"/cart"}]`,
 		StorefrontHomeSections:      `["banners","quick_entries","promo_cards","service_cards","categories","coupons","hot","recommend"]`,
 		StorefrontProfileSections:   `["member_entries","member_info","addresses","points"]`,
 		StorefrontSearchKeywords:    `["水果礼盒","零食组合","限时秒杀","新人优惠券"]`,

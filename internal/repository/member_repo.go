@@ -3,6 +3,8 @@ package repository
 import (
 	"context"
 	"errors"
+	"strconv"
+	"strings"
 
 	"gorm.io/gorm"
 
@@ -12,6 +14,14 @@ import (
 type MemberRepo struct{ db *gorm.DB }
 
 func NewMemberRepo(db *gorm.DB) *MemberRepo { return &MemberRepo{db: db} }
+
+type MemberListQuery struct {
+	Keyword string
+	Status  *int8
+	LevelID *uint64
+	Page    int
+	Size    int
+}
 
 func (r *MemberRepo) FindByOpenID(ctx context.Context, openID string) (*model.Member, error) {
 	var m model.Member
@@ -46,8 +56,43 @@ func (r *MemberRepo) FindByPhone(ctx context.Context, phone string) (*model.Memb
 	return &m, nil
 }
 
+func (r *MemberRepo) List(ctx context.Context, q MemberListQuery) ([]model.Member, int64, error) {
+	tx := TenantDB(ctx, r.db).Model(&model.Member{})
+	if q.Status != nil {
+		tx = tx.Where("status = ?", *q.Status)
+	}
+	if q.LevelID != nil {
+		tx = tx.Where("level_id = ?", *q.LevelID)
+	}
+	keyword := strings.TrimSpace(q.Keyword)
+	if keyword != "" {
+		lowerLike := "%" + strings.ToLower(keyword) + "%"
+		like := "%" + keyword + "%"
+		cond := "(LOWER(COALESCE(nickname, '')) LIKE ? OR phone LIKE ? OR openid LIKE ?"
+		args := []interface{}{lowerLike, like, like}
+		if id, err := strconv.ParseUint(keyword, 10, 64); err == nil && id > 0 {
+			cond += " OR id = ?"
+			args = append(args, id)
+		}
+		cond += ")"
+		tx = tx.Where(cond, args...)
+	}
+	var total int64
+	if err := tx.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var rows []model.Member
+	if err := tx.Order("id DESC").Offset((q.Page - 1) * q.Size).Limit(q.Size).Find(&rows).Error; err != nil {
+		return nil, 0, err
+	}
+	return rows, total, nil
+}
+
 func (r *MemberRepo) Create(ctx context.Context, m *model.Member) error {
 	m.TenantID = EnsureTenant(ctx)
+	if strings.TrimSpace(m.Phone) == "" {
+		return r.db.WithContext(ctx).Omit("phone").Create(m).Error
+	}
 	return r.db.WithContext(ctx).Create(m).Error
 }
 

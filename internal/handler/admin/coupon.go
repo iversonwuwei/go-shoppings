@@ -2,7 +2,6 @@ package admin
 
 import (
 	"strconv"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/shopspring/decimal"
@@ -27,10 +26,10 @@ type couponReq struct {
 	MaxDiscount     *decimal.Decimal `json:"max_discount"`
 	TotalCount      int              `json:"total_count" binding:"min=0"`
 	PerLimit        int              `json:"per_limit" binding:"min=1"`
-	ReceiveStartAt  *time.Time       `json:"receive_start_at"`
-	ReceiveEndAt    *time.Time       `json:"receive_end_at"`
-	ValidStartAt    *time.Time       `json:"valid_start_at"`
-	ValidEndAt      *time.Time       `json:"valid_end_at"`
+	ReceiveStartAt  *requestTime     `json:"receive_start_at"`
+	ReceiveEndAt    *requestTime     `json:"receive_end_at"`
+	ValidStartAt    *requestTime     `json:"valid_start_at"`
+	ValidEndAt      *requestTime     `json:"valid_end_at"`
 	ValidDays       int              `json:"valid_days"`
 	ApplicableType  string           `json:"applicable_type"`
 	Status          int8             `json:"status"`
@@ -63,8 +62,8 @@ func (h *CouponHandler) Create(c *gin.Context) {
 		TotalCount:     req.TotalCount,
 		RemainCount:    req.TotalCount,
 		PerLimit:       req.PerLimit,
-		ReceiveStartAt: req.ReceiveStartAt, ReceiveEndAt: req.ReceiveEndAt,
-		ValidStartAt: req.ValidStartAt, ValidEndAt: req.ValidEndAt, ValidDays: req.ValidDays,
+		ReceiveStartAt: requestTimePtr(req.ReceiveStartAt), ReceiveEndAt: requestTimePtr(req.ReceiveEndAt),
+		ValidStartAt: requestTimePtr(req.ValidStartAt), ValidEndAt: requestTimePtr(req.ValidEndAt), ValidDays: req.ValidDays,
 		ApplicableType: req.ApplicableType,
 		Status:         defaultCouponStatus(req.Status),
 	}
@@ -102,10 +101,10 @@ func (h *CouponHandler) Update(c *gin.Context) {
 		"discount_value":   req.DiscountValue,
 		"max_discount":     req.MaxDiscount,
 		"per_limit":        defaultInt(req.PerLimit, 1),
-		"receive_start_at": req.ReceiveStartAt,
-		"receive_end_at":   req.ReceiveEndAt,
-		"valid_start_at":   req.ValidStartAt,
-		"valid_end_at":     req.ValidEndAt,
+		"receive_start_at": requestTimePtr(req.ReceiveStartAt),
+		"receive_end_at":   requestTimePtr(req.ReceiveEndAt),
+		"valid_start_at":   requestTimePtr(req.ValidStartAt),
+		"valid_end_at":     requestTimePtr(req.ValidEndAt),
 		"valid_days":       req.ValidDays,
 		"applicable_type":  defaultStr(req.ApplicableType, "all"),
 		"status":           defaultCouponStatus(req.Status),

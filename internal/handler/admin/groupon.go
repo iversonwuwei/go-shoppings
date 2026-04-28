@@ -2,7 +2,6 @@ package admin
 
 import (
 	"strconv"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/shopspring/decimal"
@@ -28,8 +27,8 @@ type grouponReq struct {
 	RequireNum    int             `json:"require_num" binding:"required,min=2"`
 	ExpireHours   int             `json:"expire_hours" binding:"required,min=1"`
 	TotalStock    int             `json:"total_stock" binding:"min=0"`
-	StartAt       time.Time       `json:"start_at" binding:"required"`
-	EndAt         time.Time       `json:"end_at" binding:"required"`
+	StartAt       requestTime     `json:"start_at" binding:"required"`
+	EndAt         requestTime     `json:"end_at" binding:"required"`
 	Status        int8            `json:"status"`
 }
 
@@ -50,7 +49,11 @@ func (h *GrouponHandler) Create(c *gin.Context) {
 		response.FailCode(c, 20001, err.Error())
 		return
 	}
-	if !req.EndAt.After(req.StartAt) {
+	if req.StartAt.IsZero() || req.EndAt.IsZero() {
+		response.FailCode(c, 20001, "请选择活动时间")
+		return
+	}
+	if !req.EndAt.After(req.StartAt.Time) {
 		response.FailCode(c, 20001, "结束时间必须晚于开始时间")
 		return
 	}
@@ -63,8 +66,8 @@ func (h *GrouponHandler) Create(c *gin.Context) {
 		RequireNum:    req.RequireNum,
 		ExpireHours:   req.ExpireHours,
 		TotalStock:    req.TotalStock,
-		StartAt:       req.StartAt,
-		EndAt:         req.EndAt,
+		StartAt:       req.StartAt.Time,
+		EndAt:         req.EndAt.Time,
 		Status:        defaultCouponStatus(req.Status),
 	}
 	if err := h.repo.CreateActivity(c.Request.Context(), a); err != nil {
@@ -85,7 +88,11 @@ func (h *GrouponHandler) Update(c *gin.Context) {
 		response.FailCode(c, 20001, err.Error())
 		return
 	}
-	if !req.EndAt.After(req.StartAt) {
+	if req.StartAt.IsZero() || req.EndAt.IsZero() {
+		response.FailCode(c, 20001, "请选择活动时间")
+		return
+	}
+	if !req.EndAt.After(req.StartAt.Time) {
 		response.FailCode(c, 20001, "结束时间必须晚于开始时间")
 		return
 	}
@@ -98,8 +105,8 @@ func (h *GrouponHandler) Update(c *gin.Context) {
 		"require_num":    req.RequireNum,
 		"expire_hours":   req.ExpireHours,
 		"total_stock":    req.TotalStock,
-		"start_at":       req.StartAt,
-		"end_at":         req.EndAt,
+		"start_at":       req.StartAt.Time,
+		"end_at":         req.EndAt.Time,
 		"status":         defaultCouponStatus(req.Status),
 	}
 	if err := h.repo.UpdateActivity(c.Request.Context(), id, fields); err != nil {

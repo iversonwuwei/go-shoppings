@@ -9,6 +9,8 @@ import (
 	"wechat-mall-saas/internal/handler/member"
 	"wechat-mall-saas/internal/handler/middleware"
 	"wechat-mall-saas/internal/model"
+	"wechat-mall-saas/internal/pkg/ctxkeys"
+	apperr "wechat-mall-saas/internal/pkg/errors"
 	"wechat-mall-saas/internal/pkg/jwtx"
 	"wechat-mall-saas/internal/pkg/response"
 	"wechat-mall-saas/internal/repository"
@@ -35,6 +37,7 @@ type Deps struct {
 	AdminProductH      *admin.ProductHandler
 	AdminCategoryH     *admin.CategoryHandler
 	AdminOrderH        *admin.OrderHandler
+	AdminMemberH       *admin.MemberHandler
 	AdminPlatformH     *admin.PlatformHandler
 	AdminSettingsH     *admin.SettingsHandler
 	AdminMemberLvlH    *admin.MemberLevelHandler
@@ -58,15 +61,16 @@ type Deps struct {
 	PlatformDeploymentH *admin.PlatformDeploymentHandler
 	PlatformStorefrontH *admin.PlatformStorefrontHandler
 
-	MemberAuthH     *member.AuthHandler
-	MemberProductH  *member.ProductHandler
-	MemberCategoryH *member.CategoryHandler
-	MemberOrderH    *member.OrderHandler
-	MemberCouponH   *member.CouponHandler
-	MemberAddressH  *member.AddressHandler
-	MemberPointsH   *member.PointsHandler
-	MemberMemberH   *member.MemberHandler
-	MemberSeckillH  *member.SeckillHandler
+	MemberAuthH         *member.AuthHandler
+	MemberProductH      *member.ProductHandler
+	MemberCategoryH     *member.CategoryHandler
+	MemberOrderH        *member.OrderHandler
+	MemberCouponH       *member.CouponHandler
+	MemberAddressH      *member.AddressHandler
+	MemberPointsH       *member.PointsHandler
+	MemberMemberH       *member.MemberHandler
+	MemberSeckillH      *member.SeckillHandler
+	MemberDistributionH *member.DistributionHandler
 
 	PaymentH *PaymentHandler
 
@@ -255,6 +259,7 @@ func New(d *Deps) *gin.Engine {
 				"status":       t.Status,
 				"company_name": t.CompanyName,
 				"brand_name":   t.BrandName,
+				"brand_theme":  t.BrandTheme,
 			})
 		})
 		// 微信支付回调（租户订阅付费，平台统一商户号）
@@ -303,10 +308,16 @@ func New(d *Deps) *gin.Engine {
 		adAuth.GET("/orders", d.AdminOrderH.List)
 		adAuth.GET("/orders/:id", d.AdminOrderH.Detail)
 		adAuth.GET("/orders/:id/logs", d.AdminOrderH.Logs)
+		adAuth.POST("/orders/:id/prepare", d.AdminOrderH.Prepare)
 		adAuth.POST("/orders/:id/ship", d.AdminOrderH.Ship)
 		adAuth.GET("/order-messages", d.AdminOrderH.Messages)
 		adAuth.POST("/order-messages/read-all", d.AdminOrderH.MarkAllMessagesRead)
 		adAuth.POST("/order-messages/:id/read", d.AdminOrderH.MarkMessageRead)
+
+		adAuth.GET("/members", d.AdminMemberH.List)
+		adAuth.GET("/members/:id", d.AdminMemberH.Detail)
+		adAuth.PATCH("/members/:id/status", d.AdminMemberH.UpdateStatus)
+		adAuth.PATCH("/members/:id/level", middleware.RequireFeature(service.FeatureMemberLevel), d.AdminMemberH.UpdateLevel)
 
 		adAuth.GET("/settings/payment", d.AdminSettingsH.ListPayment)
 		adAuth.PUT("/settings/payment", d.AdminSettingsH.SubmitPayment)
@@ -410,7 +421,7 @@ func New(d *Deps) *gin.Engine {
 	mb.GET("/seckill/activities", middleware.RequireFeature(service.FeatureSeckill), d.MemberSeckillH.List)
 
 	mbAuth := mb.Group("")
-	mbAuth.Use(middleware.MemberAuth(d.JWT))
+	mbAuth.Use(middleware.MemberAuth(d.JWT), requireActiveMember(d.Member))
 	{
 		mbAuth.POST("/auth/bind-phone", d.MemberAuthH.BindPhone)
 		mbAuth.GET("/profile", d.MemberMemberH.Profile)
@@ -422,6 +433,7 @@ func New(d *Deps) *gin.Engine {
 		mbAuth.POST("/orders", d.MemberOrderH.Create)
 		mbAuth.GET("/orders", d.MemberOrderH.List)
 		mbAuth.GET("/orders/:id", d.MemberOrderH.Detail)
+		mbAuth.GET("/orders/:id/express", d.MemberOrderH.Express)
 		mbAuth.POST("/orders/:id/cancel", d.MemberOrderH.Cancel)
 		mbAuth.POST("/orders/:id/confirm", d.MemberOrderH.Confirm)
 
@@ -430,6 +442,14 @@ func New(d *Deps) *gin.Engine {
 
 		mbAuth.GET("/points/logs", d.MemberPointsH.Logs)
 
+		distribution := mbAuth.Group("/distribution", middleware.RequireFeature(service.FeatureDistribution))
+		{
+			distribution.GET("", d.MemberDistributionH.Overview)
+			distribution.POST("/apply", d.MemberDistributionH.Apply)
+			distribution.POST("/bind", d.MemberDistributionH.BindParent)
+			distribution.GET("/commissions", d.MemberDistributionH.Commissions)
+		}
+
 		mbAuth.POST("/payments", d.PaymentH.Create)
 	}
 
@@ -437,4 +457,27 @@ func New(d *Deps) *gin.Engine {
 	v1.POST("/payments/callback/wechat", d.PaymentH.WechatCallback)
 
 	return r
+}
+
+func requireActiveMember(svc *service.MemberService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		m := ctxkeys.GetMember(c.Request.Context())
+		if m == nil {
+			response.Fail(c, apperr.ErrUnauthorized)
+			c.Abort()
+			return
+		}
+		active, err := svc.IsActive(c.Request.Context(), m.ID)
+		if err != nil {
+			response.Fail(c, err)
+			c.Abort()
+			return
+		}
+		if !active {
+			response.Fail(c, apperr.New(10010, "账号不存在或被禁用"))
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
 }

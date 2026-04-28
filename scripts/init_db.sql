@@ -203,12 +203,12 @@ CREATE TABLE "members" (
     "created_at"      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at"      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "deleted_at"      TIMESTAMP,
-    UNIQUE ("tenant_id", "openid"),
-    UNIQUE ("tenant_id", "phone")
+    UNIQUE ("tenant_id", "openid")
 );
 CREATE INDEX "idx_members_tenant" ON "members" ("tenant_id");
 CREATE INDEX "idx_members_parent" ON "members" ("parent_id");
 CREATE INDEX "idx_members_level" ON "members" ("level_id");
+CREATE UNIQUE INDEX "uk_members_tenant_phone_present" ON "members" ("tenant_id", "phone") WHERE "phone" IS NOT NULL AND "phone" <> '';
 
 -- ----------------------------
 -- 8. member_addresses（收货地址表）

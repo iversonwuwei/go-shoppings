@@ -21,7 +21,10 @@ func NewAuthHandler(a *service.AuthService, t *repository.TenantRepo) *AuthHandl
 }
 
 type wxLoginReq struct {
-	Code string `json:"code" binding:"required"`
+	Code     string `json:"code" binding:"required"`
+	Nickname string `json:"nickname"`
+	Avatar   string `json:"avatar"`
+	Gender   int8   `json:"gender"`
 }
 
 type devLoginReq struct {
@@ -54,17 +57,32 @@ func (h *AuthHandler) LoginByWechat(c *gin.Context) {
 		response.Fail(c, apperr.ErrTenantInvalid)
 		return
 	}
-	if tenant.WechatAppID == "" || tenant.WechatSecret == "" {
-		response.Fail(c, apperr.New(20010, "租户未配置微信小程序"))
-		return
-	}
 	var req wxLoginReq
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.FailCode(c, 20001, err.Error())
 		return
 	}
+	input := service.WechatMemberLoginInput{
+		Code:     req.Code,
+		Nickname: req.Nickname,
+		Avatar:   req.Avatar,
+		Gender:   req.Gender,
+	}
+	if tenant.WechatAppID == "" || tenant.WechatSecret == "" {
+		if !h.auth.AllowMemberDevLogin() {
+			response.Fail(c, apperr.New(20010, "租户未配置微信小程序"))
+			return
+		}
+		res, err := h.auth.MemberDevLoginByWechat(c.Request.Context(), input)
+		if err != nil {
+			response.Fail(c, err)
+			return
+		}
+		response.OK(c, res)
+		return
+	}
 	wx := wxapp.NewClient(tenant.WechatAppID, tenant.WechatSecret)
-	res, err := h.auth.MemberLoginByWechat(c.Request.Context(), wx, req.Code)
+	res, err := h.auth.MemberLoginByWechat(c.Request.Context(), wx, input)
 	if err != nil {
 		response.Fail(c, err)
 		return
