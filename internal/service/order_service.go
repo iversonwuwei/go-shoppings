@@ -74,6 +74,7 @@ type orderTransitionInput struct {
 	MessageType  string
 	MessageTitle string
 	MessageBody  string
+	AfterUpdate  func(tx *gorm.DB, order *model.Order) error
 }
 
 func containsStatus(statuses []string, target string) bool {
@@ -119,10 +120,19 @@ func (s *OrderService) transition(ctx context.Context, input orderTransitionInpu
 		for k, v := range input.Fields {
 			fields[k] = v
 		}
-		if err := tx.Model(&model.Order{}).
+		res := tx.Model(&model.Order{}).
 			Where("id = ? AND tenant_id = ? AND status IN ?", order.ID, tenantID, input.AllowedFrom).
-			Updates(fields).Error; err != nil {
-			return err
+			Updates(fields)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return apperr.New(30010, "订单状态不可操作")
+		}
+		if input.AfterUpdate != nil {
+			if err := input.AfterUpdate(tx, &order); err != nil {
+				return err
+			}
 		}
 		if err := tx.Create(&model.OrderLog{
 			TenantID:     tenantID,
@@ -407,6 +417,9 @@ func (s *OrderService) Cancel(ctx context.Context, id, memberID uint64) error {
 		MessageType:  "order_cancelled",
 		MessageTitle: "订单已取消",
 		MessageBody:  fmt.Sprintf("订单 #%d 已被买家取消。", id),
+		AfterUpdate: func(tx *gorm.DB, order *model.Order) error {
+			return restoreOrderStockTx(ctx, tx, order.TenantID, order.ID)
+		},
 	})
 }
 

@@ -836,7 +836,25 @@ CREATE INDEX IF NOT EXISTS "idx_regions_level_enabled"
 CREATE INDEX IF NOT EXISTS "idx_regions_code"
     ON "regions" ("code");
 
--- 31. tenant_site_configs（租户站点 / 商城装修配置）
+-- 31. member_cart_items（会员购物车，后端按 tenant_id + member_id 隔离）
+CREATE TABLE IF NOT EXISTS "member_cart_items" (
+    "id"         BIGSERIAL PRIMARY KEY,
+    "tenant_id"  BIGINT NOT NULL,
+    "member_id"  BIGINT NOT NULL,
+    "product_id" BIGINT NOT NULL,
+    "sku_id"     BIGINT NOT NULL DEFAULT 0,
+    "quantity"   INT NOT NULL DEFAULT 1,
+    "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "uniq_member_cart_item"
+    ON "member_cart_items" ("tenant_id", "member_id", "product_id", "sku_id");
+CREATE INDEX IF NOT EXISTS "idx_member_cart_items_member"
+    ON "member_cart_items" ("tenant_id", "member_id", "updated_at" DESC);
+CREATE INDEX IF NOT EXISTS "idx_member_cart_items_product"
+    ON "member_cart_items" ("tenant_id", "product_id");
+
+-- 32. tenant_site_configs（租户站点 / 商城装修配置）
 CREATE TABLE IF NOT EXISTS "tenant_site_configs" (
     "tenant_id"                        BIGINT PRIMARY KEY REFERENCES "tenants"("id"),
     "custom_domain"                    VARCHAR(128) NOT NULL DEFAULT '',
@@ -869,7 +887,7 @@ CREATE TABLE IF NOT EXISTS "tenant_site_configs" (
     "updated_at"                       TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- 32. runtime flow tables（运行态功能表，保持和 Go model / migrations 一致）
+-- 33. runtime flow tables（运行态功能表，保持和 Go model / migrations 一致）
 CREATE TABLE IF NOT EXISTS "tenant_subscription_orders" (
     "id"                 BIGSERIAL PRIMARY KEY,
     "tenant_id"          BIGINT NOT NULL,

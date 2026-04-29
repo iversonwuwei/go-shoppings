@@ -74,6 +74,7 @@ type Deps struct {
 	MemberMemberH       *member.MemberHandler
 	MemberSeckillH      *member.SeckillHandler
 	MemberDistributionH *member.DistributionHandler
+	MemberCartH         *member.CartHandler
 
 	PaymentH *PaymentHandler
 
@@ -298,6 +299,13 @@ func New(d *Deps) *gin.Engine {
 		response.OK(c, t)
 	})
 
+	// 租户自助接口：必须是当前登录租户本人操作
+	tenantSelf := v1.Group("/tenant")
+	tenantSelf.Use(middleware.Tenant(d.Tenant, true), middleware.AdminAuth(d.JWT))
+	{
+		tenantSelf.GET("/site/mini-qrcode", d.AdminSiteH.MiniQRCode)
+	}
+
 	// 租户后台（管理员）
 	ad := v1.Group("/admin")
 	ad.POST("/auth/login", d.AdminAuthH.Login)
@@ -457,6 +465,13 @@ func New(d *Deps) *gin.Engine {
 
 		mbAuth.GET("/addresses", d.MemberAddressH.List)
 		mbAuth.POST("/addresses", d.MemberAddressH.Create)
+
+		mbAuth.GET("/cart", d.MemberCartH.List)
+		mbAuth.POST("/cart/items", d.MemberCartH.Add)
+		mbAuth.PATCH("/cart/items/:key", d.MemberCartH.UpdateQuantity)
+		mbAuth.DELETE("/cart/items/:key", d.MemberCartH.Delete)
+		mbAuth.POST("/cart/items/delete", d.MemberCartH.DeleteMany)
+		mbAuth.DELETE("/cart", d.MemberCartH.Clear)
 
 		mbAuth.POST("/orders", d.MemberOrderH.Create)
 		mbAuth.GET("/orders", d.MemberOrderH.List)

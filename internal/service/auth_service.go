@@ -85,6 +85,8 @@ func (s *AuthService) MemberDevLogin(ctx context.Context, phone, nickname string
 	if s.env == "production" {
 		return nil, apperr.New(10002, "当前环境不支持开发登录")
 	}
+	phone = strings.TrimSpace(phone)
+	nickname = strings.TrimSpace(nickname)
 	if phone == "" {
 		return nil, apperr.New(20001, "手机号不能为空")
 	}

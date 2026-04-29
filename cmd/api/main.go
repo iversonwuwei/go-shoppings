@@ -93,6 +93,7 @@ func main() {
 	platformSettingsRepo := repository.NewPlatformSettingsRepo(db)
 	uploadRepo := repository.NewUploadRepo(db)
 	regionRepo := repository.NewRegionRepo(db)
+	cartRepo := repository.NewCartRepo(db)
 
 	// 对象存储（local / minio）
 	objectStore, err := storage.New(cfg.Storage)
@@ -112,6 +113,7 @@ func main() {
 	paymentSvc := service.NewPaymentService(paymentRepo, orderRepo, orderLogRepo, orderSvc, tenantRepo, memberRepo, pointsLogRepo, pointsSettingsRepo, tenantSvc, cfg.App.Env)
 	couponSvc := service.NewCouponService(couponRepo, memberCouponRepo, tenantSvc)
 	memberSvc := service.NewMemberService(memberRepo, memberAddressRepo, pointsLogRepo, memberLevelRepo, couponRepo, memberCouponRepo)
+	cartSvc := service.NewCartService(cartRepo, productRepo, skuRepo)
 	settingsSvc := service.NewSettingsService(paymentConfigRepo, carrierRepo, afterSaleReasonRepo, tenantSvc)
 	platformWxpay := wxpay.NewClient(wxpay.Config{
 		AppID:      cfg.WxPay.AppID,
@@ -178,6 +180,7 @@ func main() {
 		MemberMemberH:       member.NewMemberHandler(memberSvc),
 		MemberSeckillH:      member.NewSeckillHandler(seckillRepo),
 		MemberDistributionH: member.NewDistributionHandler(distributionRepo, memberRepo),
+		MemberCartH:         member.NewCartHandler(cartSvc),
 
 		PaymentH: handler.NewPaymentHandler(paymentSvc),
 
@@ -193,7 +196,7 @@ func main() {
 		Addr:           fmt.Sprintf("%s:%d", cfg.App.Host, cfg.App.Port),
 		Handler:        r,
 		ReadTimeout:    30 * time.Second,
-		WriteTimeout:   30 * time.Second,
+		WriteTimeout:   180 * time.Second,
 		MaxHeaderBytes: 1 << 20,
 	}
 

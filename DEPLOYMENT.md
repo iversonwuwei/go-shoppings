@@ -7,7 +7,7 @@
 | Stage | Trigger | Gate | Description |
 | --- | --- | --- | --- |
 | Verify backend | Pull request, push to `master`, manual run | Required | 拉取依赖、检查 `gofmt`、执行 `go vet`、运行 `go test -race -cover ./...`、编译 API/Worker 二进制、校验 Docker Compose、构建 API 与 AI 图片服务镜像。 |
-| Deploy Docker services | Push to `master`, manual run | Depends on verify | 通过 SSH 更新服务器代码，按需应用 SQL 迁移，重建并启动 Redis、API、AI 图片服务，最后检查 `/healthz`。 |
+| Deploy Docker services | Push to `master`, manual run | Depends on verify | 通过 SSH 更新服务器代码，按需应用 SQL 迁移，重建并启动 Redis、Gateway、API、AI 图片服务，最后检查 Gateway 暴露的健康接口。 |
 
 后端相关文件变更才会触发流水线，包括 Go 代码、配置、Dockerfile、Compose 文件、迁移脚本和本 workflow。未通过验证时不会部署。部署并发按分支串行执行，避免同一目标环境被多个 workflow 同时更新。
 
@@ -29,15 +29,15 @@ docker build -t wechat-mall-ai-image:local -f ai-image-service/Dockerfile ai-ima
 
 ## Production deployment path
 
-本地和 GitHub Actions 都使用同一条部署路径：应用 SQL 迁移，先启动基础服务 `docker-compose.infra.yml` 中的 Redis，再启动应用服务 `docker-compose.app.yml` 中的 API 和 AI 图片服务，最后检查健康状态。
+本地和 GitHub Actions 都使用同一条部署路径：应用 SQL 迁移，先启动基础服务 `docker-compose.infra.yml` 中的 Redis，再启动应用服务 `docker-compose.app.yml` 中的 Gateway、API 和 AI 图片服务。外部入口统一由 Gateway 暴露在 `API_HOST_PORT`（默认 `18080`），API 与 AI 图片服务只在 Docker 网络内互通；AI 生成仍通过 Go API 鉴权入口调用，Gateway 只公开 AI 健康检查。
 
 本地启动验证：
 
 ```powershell
 docker compose -f docker-compose.infra.yml up -d redis
-docker compose -f docker-compose.app.yml up -d --build api ai-image
+docker compose -f docker-compose.app.yml up -d --build gateway api ai-image
 curl.exe -fsS http://127.0.0.1:18080/healthz
-curl.exe -fsS http://127.0.0.1:8090/healthz
+curl.exe -fsS http://127.0.0.1:18080/ai-image/healthz
 ```
 
 如需把 `scripts/migrations` 应用到 Supabase，可使用项目根目录的 `.env`：
@@ -69,9 +69,9 @@ docker run --rm --env-file .env -v "${PWD}\scripts\migrations:/migrations:ro" po
 
 ```powershell
 docker compose -f docker-compose.infra.yml up -d redis
-docker compose -f docker-compose.app.yml up -d --build api ai-image
+docker compose -f docker-compose.app.yml up -d --build gateway api ai-image
 curl.exe -fsS http://127.0.0.1:18080/healthz
-curl.exe -fsS http://127.0.0.1:8090/healthz
+curl.exe -fsS http://127.0.0.1:18080/ai-image/healthz
 ```
 
 推送到 `master` 的后端相关文件变更会自动部署，也可以在 Actions 页面手动触发 `Backend CI/CD`。

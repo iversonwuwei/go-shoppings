@@ -10,6 +10,7 @@ on:
       - "Dockerfile"
       - "docker-compose.app.yml"
       - "docker-compose.infra.yml"
+      - "gateway/**"
       - "go.mod"
       - "go.sum"
       - "cmd/**"
@@ -27,6 +28,7 @@ on:
       - "Dockerfile"
       - "docker-compose.app.yml"
       - "docker-compose.infra.yml"
+      - "gateway/**"
       - "go.mod"
       - "go.sum"
       - "cmd/**"
@@ -232,11 +234,11 @@ jobs:
             sleep 1
           done
 
-          docker compose -f docker-compose.app.yml up -d --build api ai-image
+          docker compose -f docker-compose.app.yml up -d --build gateway api ai-image
           docker compose -f docker-compose.infra.yml -f docker-compose.app.yml ps
 
           api_port="$(grep -E '^API_HOST_PORT=' .env | tail -n 1 | cut -d '=' -f 2- | tr -d '"' || true)"
           api_port="${api_port:-18080}"
           curl --retry 12 --retry-delay 5 --retry-connrefused -fsS "http://127.0.0.1:${api_port}/healthz" >/dev/null
-          curl --retry 12 --retry-delay 5 --retry-connrefused -fsS http://127.0.0.1:8090/healthz >/dev/null
+          curl --retry 12 --retry-delay 5 --retry-connrefused -fsS "http://127.0.0.1:${api_port}/ai-image/healthz" >/dev/null
           REMOTE

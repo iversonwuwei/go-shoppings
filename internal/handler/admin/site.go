@@ -1,13 +1,18 @@
 package admin
 
 import (
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/skip2/go-qrcode"
 
 	"wechat-mall-saas/internal/model"
 	"wechat-mall-saas/internal/pkg/ctxkeys"
+	apperr "wechat-mall-saas/internal/pkg/errors"
 	"wechat-mall-saas/internal/pkg/response"
 	"wechat-mall-saas/internal/repository"
 )
@@ -300,6 +305,45 @@ func (h *SiteConfigHandler) GetStorefront(c *gin.Context) {
 	}
 	s = normalizeSiteConfig(ctxkeys.GetTenant(ctx).ID, s)
 	response.OK(c, toSiteConfigDTO(s))
+}
+
+func (h *SiteConfigHandler) MiniQRCode(c *gin.Context) {
+	ctx := c.Request.Context()
+	tenant := ctxkeys.GetTenant(ctx)
+	code := ""
+	if tenant != nil {
+		code = strings.TrimSpace(tenant.Code)
+	}
+	if tenant == nil || tenant.ID == 0 || code == "" {
+		response.Fail(c, apperr.ErrTenantRequired)
+		return
+	}
+	admin := ctxkeys.GetAdmin(ctx)
+	if admin == nil || admin.TenantID == 0 || admin.TenantID != tenant.ID {
+		response.Fail(c, apperr.ErrForbidden)
+		return
+	}
+	page := "pages/home/index"
+	scene := fmt.Sprintf("t=%s", code)
+	query := fmt.Sprintf("tenantCode=%s", url.QueryEscape(code))
+	path := fmt.Sprintf("%s?%s", page, query)
+	payload := fmt.Sprintf("go-shoppings-miniprogram://%s", path)
+	png, err := qrcode.Encode(payload, qrcode.Medium, 360)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, gin.H{
+		"tenant_id":      tenant.ID,
+		"tenant_code":    code,
+		"page":           page,
+		"scene":          scene,
+		"query":          query,
+		"path":           path,
+		"qr_payload":     payload,
+		"image_data_url": "data:image/png;base64," + base64.StdEncoding.EncodeToString(png),
+		"simulated":      true,
+	})
 }
 
 type domainReq struct {

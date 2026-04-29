@@ -215,13 +215,17 @@ func (svc *AfterSaleService) Refund(ctx context.Context, id, adminID uint64, rem
 		if !canMarkAfterSaleRefunded(row) {
 			return apperr.New(30010, "当前售后状态不可退款完成")
 		}
-		if err := tx.Model(&model.AfterSaleOrder{}).Where("tenant_id = ? AND id = ? AND status = ?", tenantID, row.ID, row.Status).Updates(map[string]interface{}{
+		res := tx.Model(&model.AfterSaleOrder{}).Where("tenant_id = ? AND id = ? AND status = ?", tenantID, row.ID, row.Status).Updates(map[string]interface{}{
 			"status":        model.AfterSaleStatusRefunded,
 			"refund_remark": remark,
 			"refund_no":     utils.OrderNo("R"),
 			"refunded_at":   now,
-		}).Error; err != nil {
-			return err
+		})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return apperr.New(30010, "当前售后状态不可退款完成")
 		}
 		if err := tx.Model(&model.Order{}).Where("tenant_id = ? AND id = ?", tenantID, row.OrderID).Update("status", model.OrderStatusRefunded).Error; err != nil {
 			return err
@@ -230,6 +234,9 @@ func (svc *AfterSaleService) Refund(ctx context.Context, id, adminID uint64, rem
 			"refund_status": "refunded",
 			"refund_amount": gorm.Expr("item_total"),
 		}).Error; err != nil {
+			return err
+		}
+		if err := restoreOrderStockTx(ctx, tx, tenantID, row.OrderID); err != nil {
 			return err
 		}
 		return createAfterSaleLogAndMessage(tx, tenantID, row.OrderID, row.OrderNo, "admin", adminID, "after_sale_refund", model.OrderStatusRefunding, model.OrderStatusRefunded, remark, "售后退款已完成", "商家已标记售后退款完成。")
