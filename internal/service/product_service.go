@@ -6,6 +6,7 @@ import (
 	"encoding/csv"
 	"fmt"
 	"io"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -146,6 +147,7 @@ func (s *ProductService) Update(ctx context.Context, p *model.Product) error {
 		"images":          p.Images,
 		"video_url":       p.VideoURL,
 		"description":     p.Description,
+		"detail_images":   p.DetailImages,
 		"price":           p.Price,
 		"cost_price":      p.CostPrice,
 		"has_sku":         p.HasSKU,
@@ -399,6 +401,7 @@ func buildImportProduct(row []string, headerIndex map[string]int, categoryMap ma
 		Images:       model.JSONB(importList(importCell(row, headerIndex, "商品图集", "images"))),
 		VideoURL:     importCell(row, headerIndex, "视频地址", "video_url"),
 		Description:  importCell(row, headerIndex, "商品详情", "description"),
+		DetailImages: model.JSONB(importList(importCell(row, headerIndex, "详情图片", "宣传图片", "detail_images"))),
 		Price:        price,
 		Stock:        0,
 		StockWarning: stockWarning,
@@ -539,8 +542,17 @@ func (s *CategoryService) List(ctx context.Context) ([]model.ProductCategory, er
 			if asset.CoverImage != "" {
 				rows[i].CoverImage = asset.CoverImage
 			}
+			if asset.Sort != nil {
+				rows[i].Sort = *asset.Sort
+			}
 		}
 	}
+	sort.SliceStable(rows, func(i, j int) bool {
+		if rows[i].Sort == rows[j].Sort {
+			return rows[i].ID < rows[j].ID
+		}
+		return rows[i].Sort > rows[j].Sort
+	})
 	return rows, nil
 }
 
@@ -561,10 +573,13 @@ func (s *CategoryService) Delete(ctx context.Context, id uint64) error {
 	return s.repo.Delete(ctx, id)
 }
 
-func (s *CategoryService) UpdateTenantAsset(ctx context.Context, categoryID uint64, coverImage, icon string) error {
+func (s *CategoryService) UpdateTenantAsset(ctx context.Context, categoryID uint64, coverImage, icon string, sortValue *int) error {
 	tid := repository.EnsureTenant(ctx)
 	if tid == 0 {
 		return apperr.ErrTenantRequired
+	}
+	if sortValue != nil && *sortValue < 0 {
+		return apperr.New(20001, "排序值不能小于 0")
 	}
 	existing, err := s.repo.FindByID(ctx, categoryID)
 	if err != nil {
@@ -576,10 +591,16 @@ func (s *CategoryService) UpdateTenantAsset(ctx context.Context, categoryID uint
 	if s.asset == nil {
 		return apperr.ErrInternal
 	}
-	return s.asset.Upsert(ctx, &model.TenantCategoryAsset{
+	if err := s.asset.UpsertMedia(ctx, &model.TenantCategoryAsset{
 		TenantID:   tid,
 		CategoryID: categoryID,
 		CoverImage: strings.TrimSpace(coverImage),
 		Icon:       strings.TrimSpace(icon),
-	})
+	}); err != nil {
+		return err
+	}
+	if sortValue != nil {
+		return s.asset.UpsertSort(ctx, tid, categoryID, *sortValue)
+	}
+	return nil
 }

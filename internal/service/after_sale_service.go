@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -18,10 +19,11 @@ import (
 type AfterSaleService struct {
 	afterSales *repository.AfterSaleRepo
 	reasons    *repository.AfterSaleReasonRepo
+	carriers   *repository.ShippingCarrierRepo
 }
 
-func NewAfterSaleService(afterSales *repository.AfterSaleRepo, reasons *repository.AfterSaleReasonRepo) *AfterSaleService {
-	return &AfterSaleService{afterSales: afterSales, reasons: reasons}
+func NewAfterSaleService(afterSales *repository.AfterSaleRepo, reasons *repository.AfterSaleReasonRepo, carriers *repository.ShippingCarrierRepo) *AfterSaleService {
+	return &AfterSaleService{afterSales: afterSales, reasons: reasons, carriers: carriers}
 }
 
 type AfterSaleApplyInput struct {
@@ -33,6 +35,7 @@ type AfterSaleApplyInput struct {
 }
 
 type AfterSaleReturnInput struct {
+	ReturnExpressCode    string `json:"return_express_code"`
 	ReturnExpressCompany string `json:"return_express_company"`
 	ReturnExpressNo      string `json:"return_express_no"`
 }
@@ -50,9 +53,13 @@ func (svc *AfterSaleService) Apply(ctx context.Context, memberID, orderID uint64
 		return nil, apperr.New(20001, "售后原因必填")
 	}
 	input.Description = strings.TrimSpace(input.Description)
+	images, err := normalizeAfterSaleImages(input.Images)
+	if err != nil {
+		return nil, err
+	}
 
 	var created model.AfterSaleOrder
-	err := svc.afterSales.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = svc.afterSales.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var order model.Order
 		if err := tx.Where("tenant_id = ? AND id = ? AND member_id = ?", tenantID, orderID, memberID).First(&order).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
@@ -106,7 +113,7 @@ func (svc *AfterSaleService) Apply(ctx context.Context, memberID, orderID uint64
 			Amount:            amount,
 			Reason:            reason,
 			Description:       input.Description,
-			Images:            model.JSONB(input.Images),
+			Images:            model.JSONB(images),
 			OrderStatusBefore: order.Status,
 			AppliedAt:         now,
 		}
@@ -129,6 +136,32 @@ func (svc *AfterSaleService) Apply(ctx context.Context, memberID, orderID uint64
 		return nil, err
 	}
 	return &created, nil
+}
+
+func normalizeAfterSaleImages(images []string) ([]string, error) {
+	if len(images) == 0 {
+		return nil, apperr.New(20001, "请上传售后凭证图片")
+	}
+	out := make([]string, 0, len(images))
+	seen := make(map[string]bool, len(images))
+	for _, image := range images {
+		image = strings.TrimSpace(image)
+		if image == "" || seen[image] {
+			continue
+		}
+		if len(image) > 500 {
+			return nil, apperr.New(20001, "售后凭证图片地址过长")
+		}
+		out = append(out, image)
+		seen[image] = true
+	}
+	if len(out) == 0 {
+		return nil, apperr.New(20001, "请上传售后凭证图片")
+	}
+	if len(out) > 6 {
+		return nil, apperr.New(20001, "售后凭证图片最多上传6张")
+	}
+	return out, nil
 }
 
 func (svc *AfterSaleService) ListReasons(ctx context.Context, reasonType string) ([]model.AfterSaleReason, error) {
@@ -182,15 +215,25 @@ func (svc *AfterSaleService) Reject(ctx context.Context, id, adminID uint64, rem
 }
 
 func (svc *AfterSaleService) SubmitReturn(ctx context.Context, id, memberID uint64, input AfterSaleReturnInput) error {
-	if input.ReturnExpressCompany == "" || input.ReturnExpressNo == "" {
+	input.ReturnExpressCode = strings.TrimSpace(input.ReturnExpressCode)
+	input.ReturnExpressNo = strings.TrimSpace(input.ReturnExpressNo)
+	if input.ReturnExpressCode == "" || input.ReturnExpressNo == "" {
 		return apperr.New(20001, "退货物流公司和单号必填")
+	}
+	carrier, err := svc.carriers.FindEnabledByCode(ctx, input.ReturnExpressCode)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return apperr.New(20001, "请选择有效物流公司")
+		}
+		return err
 	}
 	now := time.Now()
 	return svc.transitionAfterSaleForMember(ctx, id, memberID, []string{model.AfterSaleStatusApproved}, model.AfterSaleStatusReturning, map[string]interface{}{
-		"return_express_company": input.ReturnExpressCompany,
+		"return_express_code":    carrier.Code,
+		"return_express_company": carrier.Name,
 		"return_express_no":      input.ReturnExpressNo,
 		"returned_at":            now,
-	}, "after_sale_return", input.ReturnExpressCompany+" "+input.ReturnExpressNo, "买家已寄回商品", fmt.Sprintf("买家已提交退货物流：%s %s。", input.ReturnExpressCompany, input.ReturnExpressNo))
+	}, "after_sale_return", carrier.Name+" "+input.ReturnExpressNo, "买家已寄回商品", fmt.Sprintf("买家已提交退货物流：%s %s。", carrier.Name, input.ReturnExpressNo))
 }
 
 func (svc *AfterSaleService) Receive(ctx context.Context, id, adminID uint64, remark string) error {

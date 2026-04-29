@@ -70,6 +70,17 @@ func (h *UploadHandler) Image(c *gin.Context) {
 		tenantID = a.TenantID
 		uploader = a.ID
 	}
+	if tenantID == 0 {
+		if m := ctxkeys.GetMember(c.Request.Context()); m != nil {
+			tenantID = m.TenantID
+			uploader = m.ID
+		}
+	}
+	if tenantID == 0 {
+		if t := ctxkeys.GetTenant(c.Request.Context()); t != nil {
+			tenantID = t.ID
+		}
+	}
 	tenantSeg := "platform"
 	if tenantID > 0 {
 		tenantSeg = fmt.Sprintf("tenant-%d", tenantID)

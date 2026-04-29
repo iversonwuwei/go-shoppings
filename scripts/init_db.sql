@@ -154,10 +154,12 @@ CREATE TABLE "tenant_category_assets" (
     "category_id"     BIGINT NOT NULL REFERENCES "product_categories"("id"),
     "icon"            VARCHAR(255),
     "cover_image"     VARCHAR(255),
+    "sort"            INT,
     "updated_at"      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY ("tenant_id", "category_id")
 );
 CREATE INDEX "idx_tenant_category_assets_category" ON "tenant_category_assets" ("category_id");
+CREATE INDEX "idx_tenant_category_assets_sort" ON "tenant_category_assets" ("tenant_id", "sort" DESC);
 
 -- ----------------------------
 -- 6. member_levels（会员等级表）
@@ -264,6 +266,7 @@ CREATE TABLE "products" (
     "images"          JSONB NOT NULL DEFAULT '[]',
     "video_url"       VARCHAR(500),
     "description"     TEXT,
+    "detail_images"   JSONB NOT NULL DEFAULT '[]',
     "price"           NUMERIC(10,2) NOT NULL DEFAULT 0,
     "cost_price"      NUMERIC(10,2),
     "stock"           INT NOT NULL DEFAULT 0,
@@ -458,6 +461,7 @@ CREATE TABLE IF NOT EXISTS "after_sale_orders" (
     "order_status_before" VARCHAR(20) NOT NULL,
     "audit_remark" VARCHAR(500) DEFAULT '',
     "refund_remark" VARCHAR(500) DEFAULT '',
+    "return_express_code" VARCHAR(30) DEFAULT '',
     "return_express_company" VARCHAR(80) DEFAULT '',
     "return_express_no" VARCHAR(80) DEFAULT '',
     "refund_no" VARCHAR(64) DEFAULT '',

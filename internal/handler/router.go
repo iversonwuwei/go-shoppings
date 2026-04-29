@@ -75,6 +75,7 @@ type Deps struct {
 	MemberSeckillH      *member.SeckillHandler
 	MemberDistributionH *member.DistributionHandler
 	MemberCartH         *member.CartHandler
+	MemberCarrierH      *member.CarrierHandler
 
 	PaymentH *PaymentHandler
 
@@ -328,7 +329,7 @@ func New(d *Deps) *gin.Engine {
 
 		adAuth.GET("/categories", d.AdminCategoryH.List)
 		adAuth.PUT("/categories/:id/media", d.AdminCategoryH.UpdateTenantAsset)
-		// 分类改由平台统一管理，租户端只读
+		// 分类名称和层级由平台统一管理，租户端可维护图片和排序
 
 		adAuth.GET("/orders", d.AdminOrderH.List)
 		adAuth.GET("/orders/:id", d.AdminOrderH.Detail)
@@ -462,6 +463,9 @@ func New(d *Deps) *gin.Engine {
 		mbAuth.POST("/auth/bind-phone", d.MemberAuthH.BindPhone)
 		mbAuth.GET("/profile", d.MemberMemberH.Profile)
 		mbAuth.PUT("/profile", d.MemberMemberH.UpdateProfile)
+		mbAuth.POST("/upload/image", d.UploadH.Image)
+		mbAuth.GET("/shipping-carriers", d.MemberCarrierH.List)
+		mbAuth.GET("/shipping-carriers/match", d.MemberCarrierH.Match)
 
 		mbAuth.GET("/addresses", d.MemberAddressH.List)
 		mbAuth.POST("/addresses", d.MemberAddressH.Create)

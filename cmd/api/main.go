@@ -109,7 +109,7 @@ func main() {
 	productSvc := service.NewProductService(productRepo, skuRepo, categoryRepo, tenantSvc)
 	categorySvc := service.NewCategoryService(categoryRepo, tenantCategoryAssetRepo)
 	orderSvc := service.NewOrderService(orderRepo, orderLogRepo, orderMessageRepo, productRepo, skuRepo, couponRepo, memberCouponRepo, tenantSvc)
-	afterSaleSvc := service.NewAfterSaleService(afterSaleRepo, afterSaleReasonRepo)
+	afterSaleSvc := service.NewAfterSaleService(afterSaleRepo, afterSaleReasonRepo, carrierRepo)
 	paymentSvc := service.NewPaymentService(paymentRepo, orderRepo, orderLogRepo, orderSvc, tenantRepo, memberRepo, pointsLogRepo, pointsSettingsRepo, tenantSvc, cfg.App.Env)
 	couponSvc := service.NewCouponService(couponRepo, memberCouponRepo, tenantSvc)
 	memberSvc := service.NewMemberService(memberRepo, memberAddressRepo, pointsLogRepo, memberLevelRepo, couponRepo, memberCouponRepo)
@@ -181,6 +181,7 @@ func main() {
 		MemberSeckillH:      member.NewSeckillHandler(seckillRepo),
 		MemberDistributionH: member.NewDistributionHandler(distributionRepo, memberRepo),
 		MemberCartH:         member.NewCartHandler(cartSvc),
+		MemberCarrierH:      member.NewCarrierHandler(settingsSvc),
 
 		PaymentH: handler.NewPaymentHandler(paymentSvc),
 

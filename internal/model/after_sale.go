@@ -44,6 +44,7 @@ type AfterSaleOrder struct {
 	OrderStatusBefore    string          `gorm:"size:20;not null" json:"order_status_before"`
 	AuditRemark          string          `gorm:"size:500" json:"audit_remark"`
 	RefundRemark         string          `gorm:"size:500" json:"refund_remark"`
+	ReturnExpressCode    string          `gorm:"size:30" json:"return_express_code"`
 	ReturnExpressCompany string          `gorm:"size:80" json:"return_express_company"`
 	ReturnExpressNo      string          `gorm:"size:80" json:"return_express_no"`
 	RefundNo             string          `gorm:"size:64" json:"refund_no"`

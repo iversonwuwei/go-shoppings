@@ -145,7 +145,7 @@ func (h *ProductHandler) ImportTemplate(c *gin.Context) {
 	_, _ = c.Writer.Write([]byte{0xEF, 0xBB, 0xBF})
 	writer := csv.NewWriter(c.Writer)
 	_ = writer.Write([]string{
-		"商品名称", "副标题", "分类名称", "封面图", "商品图集", "视频地址", "商品详情",
+		"商品名称", "副标题", "分类名称", "封面图", "商品图集", "视频地址", "商品详情", "详情图片",
 		"价格", "是否虚拟商品", "配送方式", "运费", "是否上架", "是否推荐", "是否热门", "排序值",
 	})
 	writer.Flush()
@@ -203,6 +203,7 @@ func (h *CategoryHandler) List(c *gin.Context) {
 type categoryAssetReq struct {
 	CoverImage string `json:"cover_image"`
 	Icon       string `json:"icon"`
+	Sort       *int   `json:"sort"`
 }
 
 func (h *CategoryHandler) UpdateTenantAsset(c *gin.Context) {
@@ -216,11 +217,11 @@ func (h *CategoryHandler) UpdateTenantAsset(c *gin.Context) {
 		response.FailCode(c, 20001, err.Error())
 		return
 	}
-	if err := h.svc.UpdateTenantAsset(c.Request.Context(), id, req.CoverImage, req.Icon); err != nil {
+	if err := h.svc.UpdateTenantAsset(c.Request.Context(), id, req.CoverImage, req.Icon, req.Sort); err != nil {
 		response.Fail(c, err)
 		return
 	}
-	response.OK(c, gin.H{"id": id, "cover_image": req.CoverImage, "icon": req.Icon})
+	response.OK(c, gin.H{"id": id, "cover_image": req.CoverImage, "icon": req.Icon, "sort": req.Sort})
 }
 
 // ListAll 平台端：包含禁用

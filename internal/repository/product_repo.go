@@ -215,17 +215,44 @@ func (r *TenantCategoryAssetRepo) ListByTenant(ctx context.Context, tenantID uin
 	return rows, err
 }
 
-func (r *TenantCategoryAssetRepo) Upsert(ctx context.Context, asset *model.TenantCategoryAsset) error {
+func (r *TenantCategoryAssetRepo) UpsertMedia(ctx context.Context, asset *model.TenantCategoryAsset) error {
 	if asset.CoverImage == "" && asset.Icon == "" {
-		return r.db.WithContext(ctx).
+		var existing model.TenantCategoryAsset
+		err := r.db.WithContext(ctx).
 			Where("tenant_id = ? AND category_id = ?", asset.TenantID, asset.CategoryID).
-			Delete(&model.TenantCategoryAsset{}).Error
+			First(&existing).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if existing.Sort != nil {
+			return r.db.WithContext(ctx).Model(&model.TenantCategoryAsset{}).
+				Where("tenant_id = ? AND category_id = ?", asset.TenantID, asset.CategoryID).
+				Updates(map[string]interface{}{"icon": "", "cover_image": "", "updated_at": time.Now()}).Error
+		}
+		return r.db.WithContext(ctx).Delete(&existing).Error
 	}
 	asset.UpdatedAt = time.Now()
 	return r.db.WithContext(ctx).
 		Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "tenant_id"}, {Name: "category_id"}},
 			DoUpdates: clause.AssignmentColumns([]string{"icon", "cover_image", "updated_at"}),
+		}).
+		Create(asset).Error
+}
+
+func (r *TenantCategoryAssetRepo) UpsertSort(ctx context.Context, tenantID, categoryID uint64, sortValue int) error {
+	now := time.Now()
+	asset := &model.TenantCategoryAsset{TenantID: tenantID, CategoryID: categoryID, Sort: &sortValue, UpdatedAt: now}
+	return r.db.WithContext(ctx).
+		Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "tenant_id"}, {Name: "category_id"}},
+			DoUpdates: clause.Assignments(map[string]interface{}{
+				"sort":       sortValue,
+				"updated_at": now,
+			}),
 		}).
 		Create(asset).Error
 }

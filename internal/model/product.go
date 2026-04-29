@@ -27,6 +27,7 @@ type TenantCategoryAsset struct {
 	CategoryID uint64    `gorm:"primaryKey" json:"category_id"`
 	Icon       string    `gorm:"size:255" json:"icon"`
 	CoverImage string    `gorm:"size:255" json:"cover_image"`
+	Sort       *int      `gorm:"column:sort" json:"sort,omitempty"`
 	UpdatedAt  time.Time `json:"updated_at"`
 }
 
@@ -42,6 +43,7 @@ type Product struct {
 	Images         JSONB            `gorm:"type:jsonb;not null;default:'[]'" json:"images"`
 	VideoURL       string           `gorm:"column:video_url;size:500" json:"video_url"`
 	Description    string           `gorm:"type:text" json:"description"`
+	DetailImages   JSONB            `gorm:"type:jsonb;not null;default:'[]'" json:"detail_images"`
 	Price          decimal.Decimal  `gorm:"type:numeric(10,2);not null;default:0" json:"price"`
 	CostPrice      *decimal.Decimal `gorm:"type:numeric(10,2)" json:"cost_price,omitempty"`
 	Stock          int              `gorm:"not null;default:0" json:"stock"`
