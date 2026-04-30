@@ -18,8 +18,6 @@ on:
       - "configs/**"
       - "internal/**"
       - "ai-image-service/**"
-      - "scripts/init_db.sql"
-      - "scripts/migrations/**"
   push:
     branches:
       - master
@@ -37,8 +35,6 @@ on:
       - "configs/**"
       - "internal/**"
       - "ai-image-service/**"
-      - "scripts/init_db.sql"
-      - "scripts/migrations/**"
   workflow_dispatch:
 
 permissions:
@@ -198,7 +194,6 @@ jobs:
       DEPLOY_SSH_KEY: ${{ secrets['DEPLOY_SSH_KEY'] }}
       DEPLOY_PORT: ${{ secrets['DEPLOY_PORT'] }}
       DEPLOY_PATH: ${{ secrets['DEPLOY_PATH'] }}
-      APPLY_DATABASE_MIGRATIONS: ${{ secrets['APPLY_DATABASE_MIGRATIONS'] }}
       API_IMAGE: ${{ needs.publish.outputs.api_image }}
       AI_IMAGE: ${{ needs.publish.outputs.ai_image }}
 
@@ -216,12 +211,10 @@ jobs:
 
           DEPLOY_PORT="${DEPLOY_PORT:-22}"
           DEPLOY_PATH="${DEPLOY_PATH:-/srv/go-shoppings}"
-          APPLY_DATABASE_MIGRATIONS="${APPLY_DATABASE_MIGRATIONS:-true}"
 
           {
             echo "DEPLOY_PORT=$DEPLOY_PORT"
             echo "DEPLOY_PATH=$DEPLOY_PATH"
-            echo "APPLY_DATABASE_MIGRATIONS=$APPLY_DATABASE_MIGRATIONS"
           } >> "$GITHUB_ENV"
 
           mkdir -p ~/.ssh
@@ -283,37 +276,6 @@ jobs:
           cat "$REMOTE_ENV" > "$DEPLOY_PATH/.env"
           rm -f "$REMOTE_ENV"
           REMOTE
-
-      - name: Apply database migrations
-        shell: bash
-        env:
-          DEPLOY_ENV_FILE: ${{ secrets['DEPLOY_ENV_FILE'] }}
-        run: |
-          set -euo pipefail
-          if [ "$APPLY_DATABASE_MIGRATIONS" = "false" ]; then
-            echo "Database migrations skipped by APPLY_DATABASE_MIGRATIONS=false"
-            exit 0
-          fi
-          if [ ! -d scripts/migrations ]; then
-            echo "No scripts/migrations directory found; skipping migrations"
-            exit 0
-          fi
-          if [ -z "$DEPLOY_ENV_FILE" ]; then
-            echo "DEPLOY_ENV_FILE is required to apply migrations without storing migration files on the server" >&2
-            exit 1
-          fi
-
-          tmp_env="$(mktemp)"
-          trap 'rm -f "$tmp_env"' EXIT
-          printf '%s\n' "$DEPLOY_ENV_FILE" > "$tmp_env"
-          docker run --rm --env-file "$tmp_env" -v "$PWD/scripts/migrations:/migrations:ro" postgres:15-alpine sh -c '
-            set -e
-            for file in /migrations/*.sql; do
-              [ -e "$file" ] || continue
-              echo "Applying $(basename "$file")"
-              psql "$SUPABASE_DB_DSN" -v ON_ERROR_STOP=1 -f "$file"
-            done
-          '
 
       - name: Login to Huawei SWR on server
         shell: bash

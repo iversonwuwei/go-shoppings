@@ -8,9 +8,9 @@
 | --- | --- | --- | --- |
 | Verify backend | Pull request, push to `master`, manual run | Required | 拉取依赖、检查 `gofmt`、执行 `go vet`、运行 `go test -race -cover ./...`、编译 API/Worker 二进制、校验 Docker Compose、构建 API 与 AI 图片服务镜像。 |
 | Publish SWR images | Push to `master`, manual run | Depends on verify | 登录华为云 SWR，构建 API 与 AI 图片服务生产镜像，推送 `${GITHUB_SHA}` 与 `latest` 标签。 |
-| Deploy Docker services | Push to `master`, manual run | Depends on publish | 在 GitHub Actions runner 上按需应用 SQL 迁移，通过 SSH 同步最小运行时部署工件，登录 SWR，拉取本次构建的镜像并启动 Redis、Gateway、API、AI 图片服务，最后检查 Gateway 暴露的健康接口。 |
+| Deploy Docker services | Push to `master`, manual run | Depends on publish | 通过 SSH 同步最小运行时部署工件，登录 SWR，拉取本次构建的镜像并启动 Redis、Gateway、API、AI 图片服务，最后检查 Gateway 暴露的健康接口。 |
 
-后端相关文件变更才会触发流水线，包括 Go 代码、配置、Dockerfile、Compose 文件、迁移脚本和本 workflow。未通过验证时不会部署。部署并发按分支串行执行，避免同一目标环境被多个 workflow 同时更新。
+后端相关文件变更才会触发流水线，包括 Go 代码、配置、Dockerfile、Compose 文件和本 workflow。数据库迁移脚本变更不会触发部署，迁移需要按手动流程单独执行。未通过验证时不会部署。部署并发按分支串行执行，避免同一目标环境被多个 workflow 同时更新。
 
 ## Local verification
 
@@ -31,7 +31,7 @@ docker build -t wechat-mall-ai-image:local -f ai-image-service/Dockerfile ai-ima
 
 ## Production deployment path
 
-生产服务器不保存后端源码，也不在服务器本机构建后端镜像。GitHub Actions 在 `publish` 阶段将 API 与 AI 图片服务镜像推送到华为云 SWR；服务器部署阶段只保存运行时部署工件并执行 `docker pull` 与 `docker compose up --no-build`，确保生产运行的镜像和 CI 验证/发布的提交 SHA 对齐。SQL 迁移在 GitHub Actions runner 上使用 `DEPLOY_ENV_FILE` 执行，不再把 `scripts/migrations` 同步到服务器。
+生产服务器不保存后端源码，也不在服务器本机构建后端镜像。GitHub Actions 在 `publish` 阶段将 API 与 AI 图片服务镜像推送到华为云 SWR；服务器部署阶段只保存运行时部署工件并执行 `docker pull` 与 `docker compose up --no-build`，确保生产运行的镜像和 CI 验证/发布的提交 SHA 对齐。GitHub Actions 不执行数据库迁移，也不把 `scripts/migrations` 同步到服务器。
 
 服务器 `DEPLOY_PATH` 只会保留这些运行时文件和 Docker 数据：
 
@@ -73,7 +73,7 @@ curl.exe -fsS http://127.0.0.1:18080/healthz
 curl.exe -fsS http://127.0.0.1:18080/ai-image/healthz
 ```
 
-如需把 `scripts/migrations` 应用到 Supabase，可使用项目根目录的 `.env`：
+如需把 `scripts/migrations` 应用到 Supabase，需要在发布前后按变更要求手动执行；GitHub Actions 不会自动执行迁移。可使用项目根目录的 `.env`：
 
 ```powershell
 docker run --rm --env-file .env -v "${PWD}\scripts\migrations:/migrations:ro" postgres:15-alpine sh -c 'for file in /migrations/*.sql; do [ -e "$file" ] || continue; psql "$SUPABASE_DB_DSN" -v ON_ERROR_STOP=1 -f "$file"; done'
@@ -90,8 +90,7 @@ docker run --rm --env-file .env -v "${PWD}\scripts\migrations:/migrations:ro" po
 | `DEPLOY_SSH_KEY` | Yes | 可登录服务器的私钥。 |
 | `DEPLOY_PORT` | No | SSH 端口，默认 `22`。 |
 | `DEPLOY_PATH` | No | 服务器上的项目目录，默认 `/srv/go-shoppings`。 |
-| `DEPLOY_ENV_FILE` | Yes | 服务器 `.env` 的完整内容；也用于 runner 侧执行数据库迁移。 |
-| `APPLY_DATABASE_MIGRATIONS` | No | 设为 `false` 可跳过迁移，默认执行。 |
+| `DEPLOY_ENV_FILE` | Yes | 服务器 `.env` 的完整内容。 |
 | `HUAWEI_SWR_REGISTRY` | Yes | 华为云 SWR registry 域名，例如 `swr.cn-north-4.myhuaweicloud.com`。 |
 | `HUAWEI_SWR_NAMESPACE` | Yes | 华为云 SWR 组织/命名空间。 |
 | `HUAWEI_SWR_USERNAME` | Yes | SWR 登录用户名，通常为华为云长期登录命令中的用户名。 |
