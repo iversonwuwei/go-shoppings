@@ -59,11 +59,8 @@ REDIS_IMAGE=swr.<region>.myhuaweicloud.com/<namespace>/wechat-mall-redis:7-alpin
 手动在服务器重启生产镜像时，可在 `DEPLOY_PATH` 中执行：
 
 ```powershell
-set -a
-. ./.deploy-images.env
-set +a
-docker compose -f docker-compose.deploy.yml pull gateway api ai-image
-docker compose -f docker-compose.deploy.yml up -d --no-build gateway api ai-image
+docker compose --env-file .env --env-file .deploy-images.env -f docker-compose.deploy.yml pull gateway api ai-image
+docker compose --env-file .env --env-file .deploy-images.env -f docker-compose.deploy.yml up -d --no-build gateway api ai-image
 ```
 
 本地启动验证：
@@ -109,12 +106,9 @@ docker run --rm --env-file .env -v "${PWD}\scripts\migrations:/migrations:ro" po
 如果健康检查失败，workflow 会停止并保留远端 Docker 日志用于排查。需要回滚时，将 `master` 回退到上一可用提交后重新运行 workflow，或在服务器 `DEPLOY_PATH` 中把 `.deploy-images.env` 改回上一可用镜像标签并执行：
 
 ```powershell
-set -a
-. ./.deploy-images.env
-set +a
-docker compose -f docker-compose.infra.yml up -d redis
-docker compose -f docker-compose.deploy.yml pull gateway api ai-image
-docker compose -f docker-compose.deploy.yml up -d --no-build gateway api ai-image
+docker compose --env-file .env --env-file .deploy-images.env -f docker-compose.infra.yml up -d redis
+docker compose --env-file .env --env-file .deploy-images.env -f docker-compose.deploy.yml pull gateway api ai-image
+docker compose --env-file .env --env-file .deploy-images.env -f docker-compose.deploy.yml up -d --no-build gateway api ai-image
 curl.exe -fsS http://127.0.0.1:18080/healthz
 curl.exe -fsS http://127.0.0.1:18080/ai-image/healthz
 ```

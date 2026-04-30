@@ -359,24 +359,24 @@ jobs:
           REDIS_IMAGE=$REDIS_IMAGE
           IMAGES
 
-          export API_IMAGE AI_IMAGE GATEWAY_IMAGE REDIS_IMAGE
+          compose_env=(--env-file .env --env-file .deploy-images.env)
 
-          docker compose -f docker-compose.infra.yml up -d redis
+          docker compose "${compose_env[@]}" -f docker-compose.infra.yml up -d redis
           for i in $(seq 1 30); do
-            if docker compose -f docker-compose.infra.yml exec -T redis redis-cli ping >/dev/null 2>&1; then
+            if docker compose "${compose_env[@]}" -f docker-compose.infra.yml exec -T redis redis-cli ping </dev/null >/dev/null 2>&1; then
               break
             fi
             if [ "$i" -eq 30 ]; then
               echo "Redis did not become ready" >&2
-              docker compose -f docker-compose.infra.yml logs redis >&2
+              docker compose "${compose_env[@]}" -f docker-compose.infra.yml logs redis >&2
               exit 1
             fi
             sleep 1
           done
 
-          docker compose -f docker-compose.deploy.yml pull gateway api ai-image
-          docker compose -f docker-compose.deploy.yml up -d --no-build gateway api ai-image
-          docker compose -f docker-compose.infra.yml -f docker-compose.deploy.yml ps
+          docker compose "${compose_env[@]}" -f docker-compose.deploy.yml pull gateway api ai-image
+          docker compose "${compose_env[@]}" -f docker-compose.deploy.yml up -d --no-build gateway api ai-image
+          docker compose "${compose_env[@]}" -f docker-compose.infra.yml -f docker-compose.deploy.yml ps
 
           api_port="$(grep -E '^API_HOST_PORT=' .env | tail -n 1 | cut -d '=' -f 2- | tr -d '"' || true)"
           api_port="${api_port:-18080}"
