@@ -24,26 +24,30 @@ const (
 type SubscriptionService struct {
 	orders       *repository.TenantSubscriptionOrderRepo
 	tenants      *repository.TenantRepo
+	admins       *repository.AdminRepo
 	plans        *repository.PlanRepo
 	planLogs     *repository.TenantPlanLogRepo
 	tenant       *TenantService
 	wxpay        *wxpay.Client
 	platSettings *repository.PlatformSettingsRepo
+	env          string
 }
 
 func NewSubscriptionService(
 	orders *repository.TenantSubscriptionOrderRepo,
 	tenants *repository.TenantRepo,
+	admins *repository.AdminRepo,
 	plans *repository.PlanRepo,
 	planLogs *repository.TenantPlanLogRepo,
 	tenant *TenantService,
 	wp *wxpay.Client,
 	platSettings *repository.PlatformSettingsRepo,
+	env string,
 ) *SubscriptionService {
 	return &SubscriptionService{
-		orders: orders, tenants: tenants, plans: plans,
+		orders: orders, tenants: tenants, admins: admins, plans: plans,
 		planLogs: planLogs, tenant: tenant, wxpay: wp,
-		platSettings: platSettings,
+		platSettings: platSettings, env: env,
 	}
 }
 
@@ -78,7 +82,7 @@ func (s *SubscriptionService) IsInTrial(t *model.Tenant) bool {
 
 // CreateOrder 创建订阅订单并返回 JSAPI 支付参数
 // openID 可为空（若平台 AppID 配置为 H5/Native，传空即可；JSAPI 下单需要 OpenID）
-func (s *SubscriptionService) CreateOrder(ctx context.Context, tenantID, planID uint64, billingCycle, openID string) (*model.TenantSubscriptionOrder, *wxpay.JSAPIPayParams, error) {
+func (s *SubscriptionService) CreateOrder(ctx context.Context, tenantID, planID uint64, billingCycle, openID string, createdByAdminID uint64) (*model.TenantSubscriptionOrder, *wxpay.JSAPIPayParams, error) {
 	if tenantID == 0 {
 		return nil, nil, apperr.ErrTenantRequired
 	}
@@ -128,24 +132,36 @@ func (s *SubscriptionService) CreateOrder(ctx context.Context, tenantID, planID 
 	}
 
 	orderNo := fmt.Sprintf("TSUB%d%06d", time.Now().UnixNano()/1e6, tenantID%1000000)
+	createdByUsername := ""
+	if createdByAdminID > 0 && s.admins != nil {
+		if a, err := s.admins.FindByID(ctx, createdByAdminID); err == nil && a != nil && a.TenantID == tenantID {
+			createdByUsername = a.Username
+		}
+	}
 	order := &model.TenantSubscriptionOrder{
-		TenantID:     tenantID,
-		PlanID:       targetPlanID,
-		BillingCycle: billingCycle,
-		Amount:       amount,
-		Status:       0,
-		OrderNo:      orderNo,
-		ExpireBefore: &t.PlanExpireAt,
+		TenantID:               tenantID,
+		PlanID:                 targetPlanID,
+		BillingCycle:           billingCycle,
+		Amount:                 amount,
+		Status:                 0,
+		OrderNo:                orderNo,
+		CreatedByAdminID:       createdByAdminID,
+		CreatedByAdminUsername: createdByUsername,
+		ExpireBefore:           &t.PlanExpireAt,
 	}
 	if err := s.orders.Create(ctx, order); err != nil {
 		return nil, nil, err
 	}
 
 	// 发起微信支付下单（平台统一商户号）
-	if s.wxpay == nil {
-		return order, nil, apperr.New(40002, "平台未配置微信支付")
-	}
 	client := s.resolveWxpayClient(ctx)
+	if !client.Configured() {
+		if s.env != "production" {
+			// 开发环境允许先创建待支付订单，前端可通过订阅回调模拟支付闭环。
+			return order, nil, nil
+		}
+		return order, nil, apperr.New(40002, "平台订阅收款未配置，请在平台设置中填写微信支付 AppID/商户号")
+	}
 	totalFen := amount.Mul(decimal.NewFromInt(100)).IntPart()
 	pay, err := client.PlaceJSAPIOrder(ctx, wxpay.JSAPIOrderReq{
 		Description: fmt.Sprintf("%s 订阅-%s", p.Name, billingCycleLabel(billingCycle)),
@@ -153,7 +169,10 @@ func (s *SubscriptionService) CreateOrder(ctx context.Context, tenantID, planID 
 		TotalFen:    totalFen,
 		OpenID:      openID,
 	})
-	return order, pay, err
+	if err != nil {
+		return order, nil, apperr.ErrWechatPay
+	}
+	return order, pay, nil
 }
 
 func billingCycleLabel(c string) string {
@@ -207,9 +226,13 @@ func (s *SubscriptionService) OnPaySuccess(ctx context.Context, orderNo, transac
 	} else {
 		newExpire = base.AddDate(1, 0, 0)
 	}
-	// 订单落账
-	if err := s.orders.MarkPaid(ctx, orderNo, transactionID, paidAt, newExpire); err != nil {
+	// 订单落账。expire_before 使用付款时实际续期基准，避免多笔待支付订单依次付款时展示成单笔多年订阅。
+	updated, err := s.orders.MarkPaid(ctx, orderNo, transactionID, paidAt, base, newExpire)
+	if err != nil {
 		return err
+	}
+	if !updated {
+		return nil
 	}
 	// 租户：更新 plan_id / plan_expire_at / billing_cycle / 状态恢复 Active
 	fields := map[string]interface{}{

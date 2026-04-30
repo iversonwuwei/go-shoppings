@@ -9,30 +9,34 @@ const (
 	ConfigAuditRejected int8 = 2 // 拒绝
 )
 
-// TenantPaymentConfig 商户收款配置（微信支付 / 支付宝等）
+// TenantPaymentConfig 租户结算资料配置（保留历史微信支付字段兼容）
 // 每个租户每种 provider 一条记录
 type TenantPaymentConfig struct {
-	ID            uint64     `gorm:"primaryKey;autoIncrement" json:"id"`
-	TenantID      uint64     `gorm:"not null;uniqueIndex:idx_tpc_tenant_provider,priority:1" json:"tenant_id"`
-	Provider      string     `gorm:"size:20;not null;uniqueIndex:idx_tpc_tenant_provider,priority:2" json:"provider"` // wechat / alipay
-	MchID         string     `gorm:"size:64" json:"mch_id"`
-	AppID         string     `gorm:"size:64" json:"app_id"`
-	SpAppID       string     `gorm:"column:sp_appid;size:64" json:"sp_appid"`
-	SpMchID       string     `gorm:"column:sp_mchid;size:64" json:"sp_mchid"`
-	SubAppID      string     `gorm:"column:sub_appid;size:64" json:"sub_appid"`
-	SubMchID      string     `gorm:"column:sub_mchid;size:64" json:"sub_mchid"`
-	APIV3Key      string     `gorm:"column:api_v3_key;size:128" json:"api_v3_key"`
-	CertSerialNo  string     `gorm:"size:64" json:"cert_serial_no"`
-	PrivateKeyPEM string     `gorm:"column:private_key_pem;type:text" json:"private_key_pem"`
-	CertPEM       string     `gorm:"column:cert_pem;type:text" json:"cert_pem,omitempty"`
-	NotifyURL     string     `gorm:"size:255" json:"notify_url"`
-	Enabled       int8       `gorm:"not null;default:0" json:"enabled"`      // 0 关闭 1 启用（必须审核通过后才允许启用）
-	AuditStatus   int8       `gorm:"not null;default:0" json:"audit_status"` // 0/1/2
-	AuditRemark   string     `gorm:"size:500" json:"audit_remark"`
-	SubmittedAt   *time.Time `json:"submitted_at,omitempty"`
-	AuditedAt     *time.Time `json:"audited_at,omitempty"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
+	ID                    uint64     `gorm:"primaryKey;autoIncrement" json:"id"`
+	TenantID              uint64     `gorm:"not null;uniqueIndex:idx_tpc_tenant_provider,priority:1" json:"tenant_id"`
+	Provider              string     `gorm:"size:20;not null;uniqueIndex:idx_tpc_tenant_provider,priority:2" json:"provider"` // wechat / alipay
+	MchID                 string     `gorm:"size:64" json:"mch_id"`
+	AppID                 string     `gorm:"size:64" json:"app_id"`
+	SpAppID               string     `gorm:"column:sp_appid;size:64" json:"sp_appid"`
+	SpMchID               string     `gorm:"column:sp_mchid;size:64" json:"sp_mchid"`
+	SubAppID              string     `gorm:"column:sub_appid;size:64" json:"sub_appid"`
+	SubMchID              string     `gorm:"column:sub_mchid;size:64" json:"sub_mchid"`
+	SettlementAccountName string     `gorm:"size:100" json:"settlement_account_name"`
+	SettlementAccountNo   string     `gorm:"size:128" json:"settlement_account_no"`
+	SettlementBankName    string     `gorm:"size:100" json:"settlement_bank_name"`
+	SettlementRemark      string     `gorm:"size:500" json:"settlement_remark"`
+	APIV3Key              string     `gorm:"column:api_v3_key;size:128" json:"api_v3_key"`
+	CertSerialNo          string     `gorm:"size:64" json:"cert_serial_no"`
+	PrivateKeyPEM         string     `gorm:"column:private_key_pem;type:text" json:"private_key_pem"`
+	CertPEM               string     `gorm:"column:cert_pem;type:text" json:"cert_pem,omitempty"`
+	NotifyURL             string     `gorm:"size:255" json:"notify_url"`
+	Enabled               int8       `gorm:"not null;default:0" json:"enabled"`      // 0 关闭 1 启用（必须审核通过后才允许启用）
+	AuditStatus           int8       `gorm:"not null;default:0" json:"audit_status"` // 0/1/2
+	AuditRemark           string     `gorm:"size:500" json:"audit_remark"`
+	SubmittedAt           *time.Time `json:"submitted_at,omitempty"`
+	AuditedAt             *time.Time `json:"audited_at,omitempty"`
+	CreatedAt             time.Time  `json:"created_at"`
+	UpdatedAt             time.Time  `json:"updated_at"`
 }
 
 func (TenantPaymentConfig) TableName() string { return "tenant_payment_configs" }

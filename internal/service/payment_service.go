@@ -24,6 +24,8 @@ type PaymentService struct {
 	pointsLogs *repository.PointsLogRepo
 	pointsCfg  *repository.PointsSettingsRepo
 	tenantSvc  *TenantService
+	wxpay      *wxpay.Client
+	settings   *repository.PlatformSettingsRepo
 	env        string
 }
 
@@ -31,9 +33,9 @@ func NewPaymentService(
 	p *repository.PaymentRepo, o *repository.OrderRepo, l *repository.OrderLogRepo,
 	os *OrderService,
 	t *repository.TenantRepo, m *repository.MemberRepo, pl *repository.PointsLogRepo,
-	ps *repository.PointsSettingsRepo, ts *TenantService, env string,
+	ps *repository.PointsSettingsRepo, ts *TenantService, wp *wxpay.Client, platformSettings *repository.PlatformSettingsRepo, env string,
 ) *PaymentService {
-	return &PaymentService{payments: p, orders: o, logs: l, orderSvc: os, tenants: t, members: m, pointsLogs: pl, pointsCfg: ps, tenantSvc: ts, env: env}
+	return &PaymentService{payments: p, orders: o, logs: l, orderSvc: os, tenants: t, members: m, pointsLogs: pl, pointsCfg: ps, tenantSvc: ts, wxpay: wp, settings: platformSettings, env: env}
 }
 
 type CreatePaymentResult struct {
@@ -41,6 +43,26 @@ type CreatePaymentResult struct {
 	PayParams *wxpay.JSAPIPayParams `json:"pay_params,omitempty"`
 	MockPaid  bool                  `json:"mock_paid"`
 	Status    string                `json:"status"`
+}
+
+func (s *PaymentService) resolvePlatformWxpayClient(ctx context.Context, notifyURL string) (*wxpay.Client, string, string) {
+	if s.settings != nil {
+		settings, err := s.settings.Get(ctx)
+		if err == nil && settings != nil && settings.WxpayAppID != "" && settings.WxpayMchID != "" {
+			resolvedNotifyURL := settings.WxpayNotifyURL
+			if resolvedNotifyURL == "" {
+				resolvedNotifyURL = notifyURL
+			}
+			return wxpay.NewClient(wxpay.Config{
+				AppID:      settings.WxpayAppID,
+				MchID:      settings.WxpayMchID,
+				APIv3Key:   settings.WxpayAPIv3Key,
+				CertSerial: settings.WxpayCertSerial,
+				NotifyURL:  resolvedNotifyURL,
+			}), settings.WxpayAppID, settings.WxpayMchID
+		}
+	}
+	return s.wxpay, "", ""
 }
 
 // Create 创建支付单并向微信统一下单，返回小程序支付参数
@@ -73,6 +95,16 @@ func (s *PaymentService) Create(ctx context.Context, memberID uint64, openID, or
 		PayScene:           model.PaymentSceneMemberOrder,
 		SettlementTenantID: tenantID,
 	}
+	platformWxpay, platformAppID, platformMchID := s.resolvePlatformWxpayClient(ctx, notifyURL)
+	if platformAppID != "" {
+		p.SpAppID = platformAppID
+	}
+	if platformMchID != "" {
+		p.SpMchID = platformMchID
+	}
+	if s.env == "production" && !platformWxpay.Configured() {
+		return nil, apperr.New(40002, "平台微信支付未配置，无法创建顾客订单支付")
+	}
 	exp := time.Now().Add(30 * time.Minute)
 	p.ExpireAt = &exp
 	if err := s.payments.Create(ctx, p); err != nil {
@@ -85,14 +117,7 @@ func (s *PaymentService) Create(ctx context.Context, memberID uint64, openID, or
 		return &CreatePaymentResult{PaymentNo: p.PaymentNo, MockPaid: true, Status: model.PaymentStatusPaid}, nil
 	}
 
-	wx := wxpay.NewClient(wxpay.Config{
-		AppID:      t.WechatAppID,
-		MchID:      t.WechatMchID,
-		APIv3Key:   t.WechatAPIv3Key,
-		CertSerial: t.WechatCertSerial,
-		NotifyURL:  notifyURL,
-	})
-	params, err := wx.PlaceJSAPIOrder(ctx, wxpay.JSAPIOrderReq{
+	params, err := platformWxpay.PlaceJSAPIOrder(ctx, wxpay.JSAPIOrderReq{
 		Description: "订单 " + order.OrderNo,
 		OutTradeNo:  p.PaymentNo,
 		TotalFen:    order.ActualAmount.Mul(decimal.NewFromInt(100)).IntPart(),

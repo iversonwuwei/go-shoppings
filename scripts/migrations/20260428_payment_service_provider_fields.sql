@@ -1,5 +1,5 @@
--- 2026-04-28 服务商支付字段
--- 目标：平台订阅付款和顾客订单付款账务隔离；顾客订单生产支付使用服务商 + 子商户。
+-- 2026-04-28 支付兼容字段
+-- 目标：平台订阅付款和顾客订单付款账务隔离；sp/sub 字段保留给后续服务商模式兼容。
 
 ALTER TABLE IF EXISTS "platform_settings"
     ADD COLUMN IF NOT EXISTS "sp_appid" TEXT DEFAULT '',

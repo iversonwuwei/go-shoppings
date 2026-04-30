@@ -758,6 +758,10 @@ CREATE TABLE IF NOT EXISTS "tenant_payment_configs" (
     "sp_mchid"          VARCHAR(64) DEFAULT '',
     "sub_appid"         VARCHAR(64) DEFAULT '',
     "sub_mchid"         VARCHAR(64) DEFAULT '',
+    "settlement_account_name" VARCHAR(100) DEFAULT '',
+    "settlement_account_no"   VARCHAR(128) DEFAULT '',
+    "settlement_bank_name"    VARCHAR(100) DEFAULT '',
+    "settlement_remark"       VARCHAR(500) DEFAULT '',
     "api_v3_key"        VARCHAR(128),
     "cert_serial_no"    VARCHAR(64),
     "private_key_pem"   TEXT,
@@ -900,6 +904,8 @@ CREATE TABLE IF NOT EXISTS "tenant_subscription_orders" (
     "amount"             NUMERIC(10,2) NOT NULL,
     "status"             SMALLINT NOT NULL DEFAULT 0,
     "order_no"           VARCHAR(64) NOT NULL UNIQUE,
+    "created_by_admin_id" BIGINT NOT NULL DEFAULT 0,
+    "created_by_admin_username" VARCHAR(50) NOT NULL DEFAULT '',
     "pay_transaction_id" VARCHAR(64) NOT NULL DEFAULT '',
     "pay_at"             TIMESTAMP NULL,
     "expire_before"      TIMESTAMP NULL,
@@ -909,6 +915,7 @@ CREATE TABLE IF NOT EXISTS "tenant_subscription_orders" (
 );
 CREATE INDEX IF NOT EXISTS "idx_tenant_sub_orders_tenant" ON "tenant_subscription_orders" ("tenant_id", "status");
 CREATE INDEX IF NOT EXISTS "idx_tenant_sub_orders_created" ON "tenant_subscription_orders" ("created_at" DESC);
+CREATE INDEX IF NOT EXISTS "idx_tenant_sub_orders_creator" ON "tenant_subscription_orders" ("tenant_id", "created_by_admin_id", "created_at" DESC);
 
 CREATE TABLE IF NOT EXISTS "points_settings" (
     "tenant_id"   BIGINT PRIMARY KEY REFERENCES "tenants"("id"),

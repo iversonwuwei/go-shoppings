@@ -14,6 +14,7 @@ services:
       - ./gateway/nginx.conf:/etc/nginx/conf.d/default.conf:ro
 
   api:
+    image: "${API_IMAGE:-go-shoppings-api:local}"
     build:
       context: .
       dockerfile: Dockerfile
@@ -42,6 +43,7 @@ services:
       - uploads:/app/uploads
 
   ai-image:
+    image: "${AI_IMAGE:-go-shoppings-ai-image:local}"
     build:
       context: ./ai-image-service
       dockerfile: Dockerfile

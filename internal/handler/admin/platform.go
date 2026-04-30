@@ -2,6 +2,7 @@ package admin
 
 import (
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -12,10 +13,11 @@ import (
 )
 
 type PlatformHandler struct {
-	tenant      *service.TenantService
-	tenantRepo  *repository.TenantRepo
-	planRepo    *repository.PlanRepo
-	featureRepo *repository.PlanFeatureRepo
+	tenant       *service.TenantService
+	tenantRepo   *repository.TenantRepo
+	planRepo     *repository.PlanRepo
+	featureRepo  *repository.PlanFeatureRepo
+	subOrderRepo *repository.TenantSubscriptionOrderRepo
 }
 
 func NewPlatformHandler(
@@ -23,8 +25,16 @@ func NewPlatformHandler(
 	tr *repository.TenantRepo,
 	pr *repository.PlanRepo,
 	fr *repository.PlanFeatureRepo,
+	sor *repository.TenantSubscriptionOrderRepo,
 ) *PlatformHandler {
-	return &PlatformHandler{tenant: t, tenantRepo: tr, planRepo: pr, featureRepo: fr}
+	return &PlatformHandler{tenant: t, tenantRepo: tr, planRepo: pr, featureRepo: fr, subOrderRepo: sor}
+}
+
+type tenantListItem struct {
+	model.Tenant
+	IsPaid            bool       `json:"is_paid"`
+	MembershipStartAt *time.Time `json:"membership_start_at,omitempty"`
+	MembershipEndAt   *time.Time `json:"membership_end_at,omitempty"`
 }
 
 type auditReq struct {
@@ -48,7 +58,34 @@ func (h *PlatformHandler) ListTenants(c *gin.Context) {
 		response.Fail(c, err)
 		return
 	}
-	response.OK(c, gin.H{"list": rows, "total": total, "page": page, "size": size})
+	items := make([]tenantListItem, 0, len(rows))
+	tenantIDs := make([]uint64, 0, len(rows))
+	for _, row := range rows {
+		tenantIDs = append(tenantIDs, row.ID)
+	}
+	latestPaid := map[uint64]model.TenantSubscriptionOrder{}
+	if h.subOrderRepo != nil {
+		var err error
+		latestPaid, err = h.subOrderRepo.LatestPaidByTenantIDs(c.Request.Context(), tenantIDs)
+		if err != nil {
+			response.Fail(c, err)
+			return
+		}
+	}
+	for _, row := range rows {
+		start := row.CreatedAt
+		end := row.PlanExpireAt
+		item := tenantListItem{
+			Tenant:            row,
+			MembershipStartAt: &start,
+			MembershipEndAt:   &end,
+		}
+		if _, ok := latestPaid[row.ID]; ok {
+			item.IsPaid = true
+		}
+		items = append(items, item)
+	}
+	response.OK(c, gin.H{"list": items, "total": total, "page": page, "size": size})
 }
 
 func (h *PlatformHandler) AuditTenant(c *gin.Context) {

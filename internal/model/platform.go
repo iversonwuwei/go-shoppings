@@ -89,19 +89,21 @@ func (TenantPlanLog) TableName() string { return "tenant_plan_logs" }
 
 // TenantSubscriptionOrder 租户订阅订单（向平台统一商户号支付）
 type TenantSubscriptionOrder struct {
-	ID               uint64          `gorm:"primaryKey;autoIncrement" json:"id"`
-	TenantID         uint64          `gorm:"not null;index" json:"tenant_id"`
-	PlanID           uint64          `gorm:"not null" json:"plan_id"`
-	BillingCycle     string          `gorm:"size:10;not null" json:"billing_cycle"` // monthly / yearly
-	Amount           decimal.Decimal `gorm:"type:numeric(10,2);not null" json:"amount"`
-	Status           int8            `gorm:"not null;default:0" json:"status"` // 0待支付 1已支付 2已取消 3已退款
-	OrderNo          string          `gorm:"size:64;not null;uniqueIndex" json:"order_no"`
-	PayTransactionID string          `gorm:"size:64;not null;default:''" json:"pay_transaction_id"`
-	PayAt            *time.Time      `json:"pay_at,omitempty"`
-	ExpireBefore     *time.Time      `json:"expire_before,omitempty"`
-	ExpireAfter      *time.Time      `json:"expire_after,omitempty"`
-	CreatedAt        time.Time       `json:"created_at"`
-	UpdatedAt        time.Time       `json:"updated_at"`
+	ID                     uint64          `gorm:"primaryKey;autoIncrement" json:"id"`
+	TenantID               uint64          `gorm:"not null;index" json:"tenant_id"`
+	PlanID                 uint64          `gorm:"not null" json:"plan_id"`
+	BillingCycle           string          `gorm:"size:10;not null" json:"billing_cycle"` // monthly / yearly
+	Amount                 decimal.Decimal `gorm:"type:numeric(10,2);not null" json:"amount"`
+	Status                 int8            `gorm:"not null;default:0" json:"status"` // 0待支付 1已支付 2已取消 3已退款
+	OrderNo                string          `gorm:"size:64;not null;uniqueIndex" json:"order_no"`
+	CreatedByAdminID       uint64          `gorm:"not null;default:0;index" json:"created_by_admin_id"`
+	CreatedByAdminUsername string          `gorm:"size:50;not null;default:''" json:"created_by_admin_username"`
+	PayTransactionID       string          `gorm:"size:64;not null;default:''" json:"pay_transaction_id"`
+	PayAt                  *time.Time      `json:"pay_at,omitempty"`
+	ExpireBefore           *time.Time      `json:"expire_before,omitempty"`
+	ExpireAfter            *time.Time      `json:"expire_after,omitempty"`
+	CreatedAt              time.Time       `json:"created_at"`
+	UpdatedAt              time.Time       `json:"updated_at"`
 }
 
 func (TenantSubscriptionOrder) TableName() string { return "tenant_subscription_orders" }

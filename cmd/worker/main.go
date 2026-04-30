@@ -55,7 +55,7 @@ func main() {
 
 	tenantSvc := service.NewTenantService(tenantRepo, adminRepo, planRepo, tenantPlanLogRepo, rdb)
 	wp := wxpay.NewClient(wxpay.Config{AppID: cfg.WxPay.AppID, MchID: cfg.WxPay.MchID})
-	subSvc := service.NewSubscriptionService(subOrderRepo, tenantRepo, planRepo, tenantPlanLogRepo, tenantSvc, wp, platformSettingsRepo)
+	subSvc := service.NewSubscriptionService(subOrderRepo, tenantRepo, adminRepo, planRepo, tenantPlanLogRepo, tenantSvc, wp, platformSettingsRepo, cfg.App.Env)
 
 	runOnce := func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

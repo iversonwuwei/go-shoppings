@@ -38,17 +38,42 @@ func (r *TenantSubscriptionOrderRepo) FindByID(ctx context.Context, id uint64) (
 	return &o, err
 }
 
-func (r *TenantSubscriptionOrderRepo) MarkPaid(ctx context.Context, orderNo, txnID string, paidAt time.Time, expireAfter time.Time) error {
-	return r.db.WithContext(ctx).
+func (r *TenantSubscriptionOrderRepo) LatestPaidByTenantIDs(ctx context.Context, tenantIDs []uint64) (map[uint64]model.TenantSubscriptionOrder, error) {
+	result := make(map[uint64]model.TenantSubscriptionOrder, len(tenantIDs))
+	if len(tenantIDs) == 0 {
+		return result, nil
+	}
+	var rows []model.TenantSubscriptionOrder
+	if err := r.db.WithContext(ctx).
+		Where("tenant_id IN ? AND status = ?", tenantIDs, 1).
+		Order("tenant_id ASC, pay_at DESC NULLS LAST, id DESC").
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		if _, ok := result[row.TenantID]; !ok {
+			result[row.TenantID] = row
+		}
+	}
+	return result, nil
+}
+
+func (r *TenantSubscriptionOrderRepo) MarkPaid(ctx context.Context, orderNo, txnID string, paidAt time.Time, expireBefore time.Time, expireAfter time.Time) (bool, error) {
+	tx := r.db.WithContext(ctx).
 		Model(&model.TenantSubscriptionOrder{}).
 		Where("order_no = ? AND status = ?", orderNo, 0).
 		Updates(map[string]interface{}{
 			"status":             1,
 			"pay_transaction_id": txnID,
 			"pay_at":             paidAt,
+			"expire_before":      expireBefore,
 			"expire_after":       expireAfter,
 			"updated_at":         time.Now(),
-		}).Error
+		})
+	if tx.Error != nil {
+		return false, tx.Error
+	}
+	return tx.RowsAffected > 0, nil
 }
 
 func (r *TenantSubscriptionOrderRepo) ListByTenant(ctx context.Context, tenantID uint64, page, pageSize int) ([]model.TenantSubscriptionOrder, int64, error) {

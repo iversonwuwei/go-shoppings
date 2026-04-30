@@ -100,11 +100,93 @@ jobs:
       - name: Build AI image service Docker image
         run: docker build -t wechat-mall-ai-image:${{ github.sha }} -f ai-image-service/Dockerfile ai-image-service
 
+  publish:
+    name: Publish SWR images
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: production
+    needs: verify
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/master') }}
+    outputs:
+      api_image: ${{ steps.images.outputs.api_image }}
+      ai_image: ${{ steps.images.outputs.ai_image }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare SWR image metadata
+        id: images
+        shell: bash
+        env:
+          HUAWEI_SWR_REGISTRY: ${{ secrets['HUAWEI_SWR_REGISTRY'] }}
+          HUAWEI_SWR_NAMESPACE: ${{ secrets['HUAWEI_SWR_NAMESPACE'] }}
+          HUAWEI_SWR_API_REPOSITORY: ${{ secrets['HUAWEI_SWR_API_REPOSITORY'] }}
+          HUAWEI_SWR_AI_IMAGE_REPOSITORY: ${{ secrets['HUAWEI_SWR_AI_IMAGE_REPOSITORY'] }}
+        run: |
+          set -euo pipefail
+          : "${HUAWEI_SWR_REGISTRY:?Set GitHub secret HUAWEI_SWR_REGISTRY}"
+          : "${HUAWEI_SWR_NAMESPACE:?Set GitHub secret HUAWEI_SWR_NAMESPACE}"
+
+          registry="${HUAWEI_SWR_REGISTRY%/}"
+          api_repository="${HUAWEI_SWR_API_REPOSITORY:-wechat-mall-api}"
+          ai_repository="${HUAWEI_SWR_AI_IMAGE_REPOSITORY:-wechat-mall-ai-image}"
+
+          api_image="${registry}/${HUAWEI_SWR_NAMESPACE}/${api_repository}:${GITHUB_SHA}"
+          ai_image="${registry}/${HUAWEI_SWR_NAMESPACE}/${ai_repository}:${GITHUB_SHA}"
+          api_latest="${registry}/${HUAWEI_SWR_NAMESPACE}/${api_repository}:latest"
+          ai_latest="${registry}/${HUAWEI_SWR_NAMESPACE}/${ai_repository}:latest"
+
+          {
+            echo "api_image=$api_image"
+            echo "ai_image=$ai_image"
+            echo "api_latest=$api_latest"
+            echo "ai_latest=$ai_latest"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Login to Huawei SWR
+        shell: bash
+        env:
+          HUAWEI_SWR_REGISTRY: ${{ secrets['HUAWEI_SWR_REGISTRY'] }}
+          HUAWEI_SWR_USERNAME: ${{ secrets['HUAWEI_SWR_USERNAME'] }}
+          HUAWEI_SWR_PASSWORD: ${{ secrets['HUAWEI_SWR_PASSWORD'] }}
+        run: |
+          set -euo pipefail
+          : "${HUAWEI_SWR_REGISTRY:?Set GitHub secret HUAWEI_SWR_REGISTRY}"
+          : "${HUAWEI_SWR_USERNAME:?Set GitHub secret HUAWEI_SWR_USERNAME}"
+          : "${HUAWEI_SWR_PASSWORD:?Set GitHub secret HUAWEI_SWR_PASSWORD}"
+          printf '%s\n' "$HUAWEI_SWR_PASSWORD" | docker login "$HUAWEI_SWR_REGISTRY" -u "$HUAWEI_SWR_USERNAME" --password-stdin
+
+      - name: Build and push API image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build \
+            -t "${{ steps.images.outputs.api_image }}" \
+            -t "${{ steps.images.outputs.api_latest }}" \
+            -f Dockerfile .
+          docker push "${{ steps.images.outputs.api_image }}"
+          docker push "${{ steps.images.outputs.api_latest }}"
+
+      - name: Build and push AI image service image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build \
+            -t "${{ steps.images.outputs.ai_image }}" \
+            -t "${{ steps.images.outputs.ai_latest }}" \
+            -f ai-image-service/Dockerfile ai-image-service
+          docker push "${{ steps.images.outputs.ai_image }}"
+          docker push "${{ steps.images.outputs.ai_latest }}"
+
   deploy:
     name: Deploy Docker services
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    needs: verify
+    environment: production
+    needs:
+      - verify
+      - publish
     if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/master') }}
     env:
       DEPLOY_HOST: ${{ secrets['DEPLOY_HOST'] }}
@@ -114,6 +196,8 @@ jobs:
       DEPLOY_PATH: ${{ secrets['DEPLOY_PATH'] }}
       DEPLOY_BRANCH: ${{ secrets['DEPLOY_BRANCH'] }}
       APPLY_DATABASE_MIGRATIONS: ${{ secrets['APPLY_DATABASE_MIGRATIONS'] }}
+      API_IMAGE: ${{ needs.publish.outputs.api_image }}
+      AI_IMAGE: ${{ needs.publish.outputs.ai_image }}
 
     steps:
       - name: Checkout
@@ -196,12 +280,30 @@ jobs:
           rm -f "$REMOTE_ENV"
           REMOTE
 
-      - name: Apply migrations and restart services
+      - name: Login to Huawei SWR on server
+        shell: bash
+        env:
+          HUAWEI_SWR_REGISTRY: ${{ secrets['HUAWEI_SWR_REGISTRY'] }}
+          HUAWEI_SWR_USERNAME: ${{ secrets['HUAWEI_SWR_USERNAME'] }}
+          HUAWEI_SWR_PASSWORD: ${{ secrets['HUAWEI_SWR_PASSWORD'] }}
+        run: |
+          set -euo pipefail
+          : "${HUAWEI_SWR_REGISTRY:?Set GitHub secret HUAWEI_SWR_REGISTRY}"
+          : "${HUAWEI_SWR_USERNAME:?Set GitHub secret HUAWEI_SWR_USERNAME}"
+          : "${HUAWEI_SWR_PASSWORD:?Set GitHub secret HUAWEI_SWR_PASSWORD}"
+
+          remote_login_cmd="$(printf 'docker login %q -u %q --password-stdin' "$HUAWEI_SWR_REGISTRY" "$HUAWEI_SWR_USERNAME")"
+          printf '%s\n' "$HUAWEI_SWR_PASSWORD" | ssh -i ~/.ssh/deploy_key -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" "$remote_login_cmd"
+
+      - name: Apply migrations and deploy services
         shell: bash
         run: |
           set -euo pipefail
+          : "${API_IMAGE:?Missing API image from publish job}"
+          : "${AI_IMAGE:?Missing AI image from publish job}"
+
           ssh -i ~/.ssh/deploy_key -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
-            "DEPLOY_PATH=$(printf '%q' "$DEPLOY_PATH") APPLY_DATABASE_MIGRATIONS=$(printf '%q' "$APPLY_DATABASE_MIGRATIONS") bash -s" <<'REMOTE'
+            "DEPLOY_PATH=$(printf '%q' "$DEPLOY_PATH") APPLY_DATABASE_MIGRATIONS=$(printf '%q' "$APPLY_DATABASE_MIGRATIONS") API_IMAGE=$(printf '%q' "$API_IMAGE") AI_IMAGE=$(printf '%q' "$AI_IMAGE") bash -s" <<'REMOTE'
           set -euo pipefail
           cd "$DEPLOY_PATH"
 
@@ -234,7 +336,14 @@ jobs:
             sleep 1
           done
 
-          docker compose -f docker-compose.app.yml up -d --build gateway api ai-image
+          cat > .deploy-images.env <<IMAGES
+          API_IMAGE=$API_IMAGE
+          AI_IMAGE=$AI_IMAGE
+          IMAGES
+
+          export API_IMAGE AI_IMAGE
+          docker compose -f docker-compose.app.yml pull gateway api ai-image
+          docker compose -f docker-compose.app.yml up -d --no-build gateway api ai-image
           docker compose -f docker-compose.infra.yml -f docker-compose.app.yml ps
 
           api_port="$(grep -E '^API_HOST_PORT=' .env | tail -n 1 | cut -d '=' -f 2- | tr -d '"' || true)"

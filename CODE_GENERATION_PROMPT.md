@@ -341,9 +341,9 @@ var Plans = []Plan{
 ### 小程序端 - 支付
 
 - POST /api/v1/member/payments {order_no} → {payment_no, pay_params, mock_paid, status}
-- POST /api/v1/payments/callback/wechat → 顾客订单微信支付回调（V3 AES-256-GCM 解密，服务商 + 子商户校验）
+- POST /api/v1/payments/callback/wechat → 顾客订单微信支付回调（V3 AES-256-GCM 解密，平台商户号与金额校验）
 - POST /api/v1/public/subscription/callback → 租户订阅微信支付回调，仅处理 tenant_subscription_orders
-- 顾客订单支付生产环境必须使用 `/v3/pay/partner/transactions/jsapi`，资金结算到当前租户子商户；平台订阅付款使用平台自有收款配置，资金进入平台账户。
+- 顾客订单支付前期生产环境使用平台统一微信商户号 `/v3/pay/transactions/jsapi`，资金先进入平台账户，并通过 `payments.settlement_tenant_id` 归集到待结算租户；平台订阅付款同样使用平台自有收款配置。
 
 ### 管理端 - 商品
 
@@ -446,10 +446,10 @@ var Plans = []Plan{
 // 3. 拿 prepay_id，生成调起小程序支付参数
 // 4. 回调处理
 // - 验证签名（微信发来的是 AES-256-GCM 加密的 ciphertext）
-// - 校验 out_trade_no、金额、sp_mchid/sub_mchid、trade_state
+// - 校验 out_trade_no、金额、平台 mchid、trade_state
 // - 解密后处理：更新 payment 状态 → 更新 order 状态 → 扣库存 → 发积分 → 计算分佣
 // - 返回 HTTP 200 + {"code":"SUCCESS","message":"SUCCESS"}
-// - 生产环境缺少服务商或子商户配置时必须拒绝支付下单，不允许模拟支付成功
+// - 生产环境缺少平台微信支付配置时必须拒绝支付下单，不允许模拟支付成功
 ```
 
 ## 七、实现要求

@@ -40,18 +40,22 @@ func (s *SettingsService) ListPaymentConfigs(ctx context.Context) ([]model.Tenan
 }
 
 type PaymentConfigInput struct {
-	Provider      string `json:"provider"`
-	MchID         string `json:"mch_id"`
-	AppID         string `json:"app_id"`
-	SpAppID       string `json:"sp_appid"`
-	SpMchID       string `json:"sp_mchid"`
-	SubAppID      string `json:"sub_appid"`
-	SubMchID      string `json:"sub_mchid"`
-	APIV3Key      string `json:"api_v3_key"`
-	CertSerialNo  string `json:"cert_serial_no"`
-	PrivateKeyPEM string `json:"private_key_pem"`
-	CertPEM       string `json:"cert_pem"`
-	NotifyURL     string `json:"notify_url"`
+	Provider              string `json:"provider"`
+	MchID                 string `json:"mch_id"`
+	AppID                 string `json:"app_id"`
+	SpAppID               string `json:"sp_appid"`
+	SpMchID               string `json:"sp_mchid"`
+	SubAppID              string `json:"sub_appid"`
+	SubMchID              string `json:"sub_mchid"`
+	SettlementAccountName string `json:"settlement_account_name"`
+	SettlementAccountNo   string `json:"settlement_account_no"`
+	SettlementBankName    string `json:"settlement_bank_name"`
+	SettlementRemark      string `json:"settlement_remark"`
+	APIV3Key              string `json:"api_v3_key"`
+	CertSerialNo          string `json:"cert_serial_no"`
+	PrivateKeyPEM         string `json:"private_key_pem"`
+	CertPEM               string `json:"cert_pem"`
+	NotifyURL             string `json:"notify_url"`
 }
 
 func (s *SettingsService) SubmitPaymentConfig(ctx context.Context, in PaymentConfigInput) (*model.TenantPaymentConfig, error) {
@@ -60,28 +64,29 @@ func (s *SettingsService) SubmitPaymentConfig(ctx context.Context, in PaymentCon
 		return nil, apperr.New(40001, "tenant required")
 	}
 	if in.Provider == "" {
-		in.Provider = "wechat"
+		in.Provider = "manual_settlement"
 	}
-	if in.SubMchID == "" && in.MchID == "" {
-		return nil, apperr.New(20001, "sub_mchid 或 mch_id 必填")
-	}
-	if in.SubMchID == "" && in.MchID != "" && in.APIV3Key == "" {
-		return nil, apperr.New(20001, "直连商户号需填写 api_v3_key")
+	if in.Provider == "manual_settlement" && (strings.TrimSpace(in.SettlementAccountName) == "" || strings.TrimSpace(in.SettlementAccountNo) == "") {
+		return nil, apperr.New(20001, "结算户名和结算账号必填")
 	}
 	m := &model.TenantPaymentConfig{
-		TenantID:      tid,
-		Provider:      in.Provider,
-		MchID:         in.MchID,
-		AppID:         in.AppID,
-		SpAppID:       in.SpAppID,
-		SpMchID:       in.SpMchID,
-		SubAppID:      in.SubAppID,
-		SubMchID:      in.SubMchID,
-		APIV3Key:      in.APIV3Key,
-		CertSerialNo:  in.CertSerialNo,
-		PrivateKeyPEM: in.PrivateKeyPEM,
-		CertPEM:       in.CertPEM,
-		NotifyURL:     in.NotifyURL,
+		TenantID:              tid,
+		Provider:              in.Provider,
+		MchID:                 in.MchID,
+		AppID:                 in.AppID,
+		SpAppID:               in.SpAppID,
+		SpMchID:               in.SpMchID,
+		SubAppID:              in.SubAppID,
+		SubMchID:              in.SubMchID,
+		SettlementAccountName: in.SettlementAccountName,
+		SettlementAccountNo:   in.SettlementAccountNo,
+		SettlementBankName:    in.SettlementBankName,
+		SettlementRemark:      in.SettlementRemark,
+		APIV3Key:              in.APIV3Key,
+		CertSerialNo:          in.CertSerialNo,
+		PrivateKeyPEM:         in.PrivateKeyPEM,
+		CertPEM:               in.CertPEM,
+		NotifyURL:             in.NotifyURL,
 	}
 	if err := s.payCfg.Upsert(ctx, m); err != nil {
 		return nil, err

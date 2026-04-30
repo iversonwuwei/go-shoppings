@@ -4,6 +4,7 @@ logs/
 uploads/
 *.log
 .env
+.deploy-images.env
 .token_tmp
 coverage.out
 coverage.html

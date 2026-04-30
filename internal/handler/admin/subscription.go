@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"wechat-mall-saas/internal/pkg/ctxkeys"
+	apperr "wechat-mall-saas/internal/pkg/errors"
 	"wechat-mall-saas/internal/pkg/response"
 	"wechat-mall-saas/internal/service"
 )
@@ -38,7 +39,12 @@ func (h *SubscriptionHandler) Create(c *gin.Context) {
 		response.FailCode(c, 20001, err.Error())
 		return
 	}
-	order, pay, err := h.sub.CreateOrder(c.Request.Context(), t.ID, req.PlanID, req.BillingCycle, req.OpenID)
+	adminInfo := ctxkeys.GetAdmin(c.Request.Context())
+	if adminInfo == nil {
+		response.Fail(c, apperr.ErrUnauthorized)
+		return
+	}
+	order, pay, err := h.sub.CreateOrder(c.Request.Context(), t.ID, req.PlanID, req.BillingCycle, req.OpenID, adminInfo.ID)
 	if err != nil {
 		response.Fail(c, err)
 		return

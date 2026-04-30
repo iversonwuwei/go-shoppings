@@ -110,11 +110,6 @@ func main() {
 	categorySvc := service.NewCategoryService(categoryRepo, tenantCategoryAssetRepo)
 	orderSvc := service.NewOrderService(orderRepo, orderLogRepo, orderMessageRepo, productRepo, skuRepo, couponRepo, memberCouponRepo, tenantSvc)
 	afterSaleSvc := service.NewAfterSaleService(afterSaleRepo, afterSaleReasonRepo, carrierRepo)
-	paymentSvc := service.NewPaymentService(paymentRepo, orderRepo, orderLogRepo, orderSvc, tenantRepo, memberRepo, pointsLogRepo, pointsSettingsRepo, tenantSvc, cfg.App.Env)
-	couponSvc := service.NewCouponService(couponRepo, memberCouponRepo, tenantSvc)
-	memberSvc := service.NewMemberService(memberRepo, memberAddressRepo, pointsLogRepo, memberLevelRepo, couponRepo, memberCouponRepo)
-	cartSvc := service.NewCartService(cartRepo, productRepo, skuRepo)
-	settingsSvc := service.NewSettingsService(paymentConfigRepo, carrierRepo, afterSaleReasonRepo, tenantSvc)
 	platformWxpay := wxpay.NewClient(wxpay.Config{
 		AppID:      cfg.WxPay.AppID,
 		MchID:      cfg.WxPay.MchID,
@@ -122,7 +117,12 @@ func main() {
 		CertSerial: cfg.WxPay.CertSerial,
 		NotifyURL:  cfg.WxPay.NotifyURL,
 	})
-	subscriptionSvc := service.NewSubscriptionService(subOrderRepo, tenantRepo, planRepo, tenantPlanLogRepo, tenantSvc, platformWxpay, platformSettingsRepo)
+	paymentSvc := service.NewPaymentService(paymentRepo, orderRepo, orderLogRepo, orderSvc, tenantRepo, memberRepo, pointsLogRepo, pointsSettingsRepo, tenantSvc, platformWxpay, platformSettingsRepo, cfg.App.Env)
+	couponSvc := service.NewCouponService(couponRepo, memberCouponRepo, tenantSvc)
+	memberSvc := service.NewMemberService(memberRepo, memberAddressRepo, pointsLogRepo, memberLevelRepo, couponRepo, memberCouponRepo)
+	cartSvc := service.NewCartService(cartRepo, productRepo, skuRepo)
+	settingsSvc := service.NewSettingsService(paymentConfigRepo, carrierRepo, afterSaleReasonRepo, tenantSvc)
+	subscriptionSvc := service.NewSubscriptionService(subOrderRepo, tenantRepo, adminRepo, planRepo, tenantPlanLogRepo, tenantSvc, platformWxpay, platformSettingsRepo, cfg.App.Env)
 
 	// ========== 装配 Handler ==========
 	deps := &handler.Deps{
@@ -145,7 +145,7 @@ func main() {
 		AdminOrderH:        admin.NewOrderHandler(orderSvc),
 		AdminAfterSaleH:    admin.NewAfterSaleHandler(afterSaleSvc),
 		AdminMemberH:       admin.NewMemberHandler(memberSvc),
-		AdminPlatformH:     admin.NewPlatformHandler(tenantSvc, tenantRepo, planRepo, planFeatureRepo),
+		AdminPlatformH:     admin.NewPlatformHandler(tenantSvc, tenantRepo, planRepo, planFeatureRepo, subOrderRepo),
 		AdminSettingsH:     admin.NewSettingsHandler(settingsSvc),
 		AdminMemberLvlH:    admin.NewMemberLevelHandler(memberLevelRepo),
 		AdminSeckillH:      admin.NewSeckillHandler(seckillRepo),

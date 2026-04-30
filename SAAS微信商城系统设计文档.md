@@ -17,9 +17,10 @@
 系统存在两条支付业务线，产品和账务边界必须隔离：
 
 - 平台会员 / 套餐订阅付款：付款方为租户，收款方为平台，资金进入平台账户，用于开通、续订、升级或恢复套餐。
-- 顾客购买商品付款：付款方为 C 端顾客，收款方为实际经营租户，生产环境必须采用微信支付服务商模式 + 子商户，资金结算到子商户账户。
-- 平台不得把顾客订单货款先收进平台自有账户再人工转付租户；如需平台抽佣，应在服务商模式下通过微信分账、结算规则或独立账务流水实现。
-- 非生产环境可保留模拟支付以验证订单状态流；生产环境缺少服务商或子商户配置时必须拒绝支付下单，不能降级为模拟成功。
+- 顾客购买商品付款：前期采用平台统一收款模式，付款方为 C 端顾客，收款方为平台微信支付商户号，订单归属和待结算租户通过 `payments.tenant_id` / `payments.settlement_tenant_id` 记录。
+- 平台按账期对顾客订单货款做结算汇总，扣除平台服务费、退款、售后、分销佣金等应扣项后，再通过线下转账或后续自动打款能力结算给租户。
+- 微信支付服务商 + 子商户模式作为后续增强能力保留字段和迁移空间，前期顾客订单支付不得强依赖租户子商户配置。
+- 非生产环境可保留模拟支付以验证订单状态流；生产环境缺少平台微信支付配置时必须拒绝支付下单，不能降级为模拟成功。
 
 ### 1.3 技术选型
 
@@ -251,8 +252,8 @@ const (
 | contact_email | VARCHAR(100) | 联系邮箱 |
 | wechat_appid | VARCHAR(50) | 微信小程序 AppID |
 | wechat_secret | VARCHAR(100) | 微信小程序 AppSecret（加密） |
-| wechat_mchid | VARCHAR(30) | 历史直连商户号字段，仅兼容旧配置；顾客订单生产支付以 `tenant_payment_configs.sub_mchid` 为准 |
-| wechat_apiv3_key | VARCHAR(100) | 历史直连 APIv3 密钥（加密），服务商模式不应依赖该字段 |
+| wechat_mchid | VARCHAR(30) | 历史直连商户号字段，仅兼容旧配置；前期顾客订单生产支付以平台 `wxpay_mch_id` 为准 |
+| wechat_apiv3_key | VARCHAR(100) | 历史直连 APIv3 密钥（加密），平台统一收款模式不依赖该字段 |
 | wechat_cert_serial | VARCHAR(100) | 历史直连支付证书序列号 |
 | plan_id | BIGINT UNSIGNED | 套餐ID（外键） |
 | plan_expire_at | DATETIME | 套餐到期时间 |
@@ -408,32 +409,46 @@ tenant_id，含 type(cash/discount/shipping)、threshold_amount、discount_value
 
 #### payments（支付记录表）
 
-顾客订单支付记录，使用 `tenant_id + member_id` 归属到实际经营租户，`payment_no` 全局唯一。生产环境下该表记录服务商支付下单与回调结果：
+顾客订单支付记录，使用 `tenant_id + member_id` 归属到实际经营租户，`payment_no` 全局唯一。前期生产环境下该表记录平台统一收款的微信支付下单与回调结果：
 
 - 基础字段：`tenant_id`、`member_id`、`payment_no`、`order_no`、`amount`、`status`、`expire_at`、`closed_at`、`close_reason`
 - 微信交易字段：`wechat_trade_type`、`wechat_transaction_id`、`wechat_payer_openid`、`wechat_paid_at`
-- 服务商字段：`sp_appid`、`sp_mchid`、`sub_appid`、`sub_mchid`、`settlement_tenant_id`、`pay_scene`
+- 平台收款与结算字段：`settlement_tenant_id`、`pay_scene`，以及可选的 `sp_appid/sp_mchid/sub_appid/sub_mchid` 兼容字段；平台统一收款模式下子商户字段可为空，`sp_appid/sp_mchid` 可作为平台收款账户快照使用。
 - 退款字段：`refund_amount`、`refund_status`
 
 `pay_scene` 固定区分 `member_order` 与后续扩展场景；顾客订单支付只能写 `member_order`，不得复用租户订阅订单号。回调处理必须以 `payment_no/out_trade_no` 幂等更新支付状态，再推进订单、库存、积分与分佣。
 
-#### tenant_payment_configs（租户子商户收款配置）
+#### tenant_payment_configs（租户结算资料配置）
 
-每个租户每种支付渠道一条配置，生产顾客订单支付使用微信服务商子商户模式：
+每个租户每种结算方式一条配置。前期顾客订单支付统一进入平台账户，该表不再作为顾客下单前置条件，而用于租户提交结算资料、平台审核和后续账期结算：
 
-- `provider`: `wechat` / 后续 `alipay`
-- `sp_mchid`、`sp_appid`: 平台服务商商户号与服务商 AppID，可来自平台全局配置并冗余快照
-- `sub_mchid`、`sub_appid`: 租户子商户号与授权小程序 AppID
-- `mch_id`、`app_id`: 历史直连字段，仅用于兼容迁移，不作为新生产链路首选
+- `provider`: 前期使用 `manual_settlement`，后续可扩展 `wechat` / `alipay` / `bank`
+- `settlement_account_name`、`settlement_account_no`、`settlement_bank_name`、`settlement_remark`: 租户账期结算资料，审核通过后供平台财务放款使用
+- `mch_id`、`app_id`、`sub_mchid`、`sub_appid`: 历史直连和服务商字段，仅兼容旧配置或后续服务商模式，不作为前期顾客订单支付必填项
+- `notify_url`: 前期可作为结算备注或外部结算系统回调地址保留，不参与顾客订单支付下单
 - `enabled`、`audit_status`、`audit_remark`、`submitted_at`、`audited_at`: 平台审核与启用状态
 
-商户提交收款资料后必须经平台审核。审核通过且 `enabled=1` 后，会员订单支付才允许调用微信服务商下单；审核中、驳回或未启用时，小程序支付接口返回业务错误，引导商户完成收款配置。
+商户提交结算资料后必须经平台审核。审核通过且 `enabled=1` 后，该租户进入账期结算候选范围；审核中、驳回或未提交不会阻塞 C 端顾客下单支付，但平台结算时应提示该租户结算资料未完成。
 
 #### tenant_subscription_orders（租户订阅订单表）
 
-租户续费、升级、降级前先创建订阅订单，记录 `plan_id`、`billing_cycle`、`amount`、`order_no`、支付流水、支付前后到期时间。微信支付回调成功后再更新租户套餐和 `tenant_plan_logs`。
+租户续费、升级、降级前先创建订阅订单，记录 `plan_id`、`billing_cycle`、`amount`、`order_no`、创建管理员、支付流水、支付前后到期时间。微信支付回调成功后再更新租户套餐和 `tenant_plan_logs`。
+
+订阅订单必须记录创建人快照：`created_by_admin_id` 保存创建订单的商户后台管理员 ID，`created_by_admin_username` 保存创建时的用户名快照。列表页和审计排查默认展示创建人，避免多个商户管理员共用同一租户时无法追溯谁发起了订阅订单。
 
 订阅付款的收款方是平台，使用平台自有商户号或服务商体系下的平台自营收款商户。订阅订单不得写入 `payments` 表，避免和顾客订单货款混账；回调入口使用 `/api/v1/public/subscription/callback` 或等价的订阅专用回调。
+
+入驻后的默认付款闭环如下：
+
+1. 访客在公开页提交入驻申请（可选择套餐与计费周期），系统创建租户与管理员账号，租户状态为 `pending`。
+2. 平台在“租户审核”中审核通过，租户进入 `active` 并开启试用期。
+3. 商户使用申请时创建的管理员账号登录后台，进入“订阅付费”（`/admin/billing`）创建订阅订单。
+4. 订阅订单支付成功后，系统通过订阅回调更新 `tenant_subscription_orders`、租户 `plan_expire_at` 与 `tenant_plan_logs`。
+5. 若商户在申请后看不到付款入口，前端必须明确提示“先审核通过，再登录后台在订阅付费中完成付款”，避免用户误以为无付款通道。
+
+平台“租户审核/租户管理”列表必须展示租户订阅摘要：是否已付费、会员起始时间、会员到期时间。`is_paid` 由该租户是否存在已支付订阅订单判定；`membership_start_at` 表示租户整体会员/试用周期的起点，取租户 `created_at`；`membership_end_at` 取当前租户 `plan_expire_at`。最近一次订阅订单的 `expire_before` / `expire_after` 只用于订阅订单明细和审计排查，不用于覆盖租户列表的整体会员周期，避免续费场景下列表显示成未来某一笔订单的续费区间。
+
+订阅订单的 `expire_before` 必须在支付成功落账时刷新为“本次续期实际基准到期时间”，不能只保留创建订单时的快照。若同一租户存在多笔待支付订单并依次支付，每笔订单只能从付款时的当前到期日继续延长一个计费周期，订单自身展示区间应始终保持月付约 1 个月、年付约 1 年，不能因为多笔订单叠加而表现为单笔订单订阅多年。
 
 ### 3.7 系统层表
 
@@ -454,7 +469,7 @@ tenant_id，含 type(cash/discount/shipping)、threshold_amount、discount_value
 - `scripts/init_db.sql` 必须覆盖基础表和当前运行态模型所需表；后续增量统一放入 `scripts/migrations/`，并保持 `CREATE TABLE IF NOT EXISTS`、`ALTER TABLE ... ADD COLUMN IF NOT EXISTS`、`CREATE INDEX IF NOT EXISTS` 的幂等写法。
 - 本地演示库必须至少包含：`api_tokens`、`api_request_logs`、`sms_settings`、`sms_templates`、`sms_logs`、`after_sale_orders`、`tenant_payment_configs`、`distribution_settings`、`distributors`、`commission_logs`、`groupon_activities`、`groupons`、`groupon_members`、`points_settings`、`delivery_settings`、`tenant_subscription_orders`。
 - 租户表必须包含 `billing_cycle` 和 `extra_features`，用于入驻计费周期和平台额外授权功能。缺失字段或缺失表应通过可重复执行的补丁脚本修复，并在执行后用 information_schema 校验。
-- 服务商支付迁移必须通过幂等脚本补齐 `tenant_payment_configs` 的 `sp_mchid/sp_appid/sub_mchid/sub_appid`，以及 `payments` 的 `sp_mchid/sp_appid/sub_mchid/sub_appid/settlement_tenant_id/pay_scene`；迁移后需要用 information_schema 校验字段存在。
+- 平台统一收款迁移必须保留 `payments.settlement_tenant_id/pay_scene` 用于账期结算归属；`sp_mchid/sp_appid/sub_mchid/sub_appid` 字段作为服务商模式兼容字段保留，不作为前期支付下单门禁。
 
 ---
 
@@ -589,11 +604,11 @@ tenant_id，含 type(cash/discount/shipping)、threshold_amount、discount_value
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | /api/v1/member/payments | 创建顾客订单支付；生产使用服务商 + 子商户 JSAPI 下单，返回 `payment_no` 与小程序支付参数；开发可模拟支付成功 |
+| POST | /api/v1/member/payments | 创建顾客订单支付；前期生产使用平台统一微信商户号 JSAPI 下单，返回 `payment_no` 与小程序支付参数；开发可模拟支付成功 |
 | POST | /api/v1/payments/callback/wechat | 顾客订单微信支付回调；按 `payment_no/out_trade_no` 幂等更新 `payments` 和订单状态 |
 | POST | /api/v1/public/subscription/callback | 租户订阅微信支付回调；仅处理 `tenant_subscription_orders` |
 
-`POST /api/v1/member/payments` 请求体：`{ order_no }`。响应体：`{ payment_no, pay_params, mock_paid, status }`。生产环境必须校验当前租户存在已审核启用的微信子商户配置，并以当前订单租户作为 `settlement_tenant_id` 写入支付记录。`pay_params` 只包含小程序端 `wx.requestPayment` 所需字段，不返回服务商密钥、子商户密钥或证书材料。
+`POST /api/v1/member/payments` 请求体：`{ order_no }`。响应体：`{ payment_no, pay_params, mock_paid, status }`。生产环境必须校验平台微信支付配置完整，并以当前订单租户作为 `settlement_tenant_id` 写入支付记录，后续账期结算按该字段归集租户应结金额。`pay_params` 只包含小程序端 `wx.requestPayment` 所需字段，不返回平台商户密钥或证书材料。
 
 微信回调契约：顾客订单回调只处理 `payments.pay_scene = member_order`；订阅回调只处理 `tenant_subscription_orders`。两类回调都必须验签、解密、校验金额、校验商户号、校验交易状态，并保证重复通知幂等返回成功。
 
@@ -642,14 +657,14 @@ tenant_id，含 type(cash/discount/shipping)、threshold_amount、discount_value
 
 会员管理接口必须经过租户中间件和管理员鉴权，Repository 查询必须自动携带或显式携带当前 `tenant_id` 条件。列表响应统一为 `{ list, total, page, size }`；会员等级仅作为可选增强能力，不影响基础会员管理流程。
 
-#### 管理端 - 收款配置
+#### 管理端 - 结算资料
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | /api/v1/admin/settings/payment | 获取当前租户收款配置 |
-| PUT | /api/v1/admin/settings/payment | 提交当前租户微信子商户收款配置，提交后进入平台审核 |
+| GET | /api/v1/admin/settings/payment | 获取当前租户结算资料配置 |
+| PUT | /api/v1/admin/settings/payment | 提交当前租户结算资料，提交后进入平台审核 |
 
-商户侧 `PUT /api/v1/admin/settings/payment` 请求体支持 `provider=wechat`、`sub_mchid`、`sub_appid`、`notify_url`。`mch_id`、`app_id`、`api_v3_key`、`cert_serial_no`、`private_key_pem`、`cert_pem` 作为历史直连字段保留兼容，但服务商模式的新配置以 `sub_mchid/sub_appid` 为主要输入。提交成功后 `audit_status` 重置为待审核、`enabled` 重置为 0。
+商户侧 `PUT /api/v1/admin/settings/payment` 请求体前期支持 `provider=manual_settlement`，并提交 `settlement_account_name`、`settlement_account_no`、`settlement_bank_name`、`settlement_remark`；现有 `mch_id`、`app_id`、`sub_mchid`、`sub_appid`、`api_v3_key`、`cert_serial_no`、`private_key_pem`、`cert_pem` 作为历史直连或服务商兼容字段保留。提交成功后 `audit_status` 重置为待审核、`enabled` 重置为 0。该配置不再作为 C 端支付下单前置条件，只影响平台账期结算能否放款。
 
 #### 管理端 - 优惠券/拼团/秒杀/分销（CRUD + 统计）
 
@@ -661,10 +676,10 @@ tenant_id，含 type(cash/discount/shipping)、threshold_amount、discount_value
 | GET | /api/v1/platform/plans | 套餐列表 |
 | POST | /api/v1/platform/plans | 创建套餐 |
 | PUT | /api/v1/platform/plans/{id} | 修改套餐 |
-| GET | /api/v1/platform/settings | 获取平台全局设置与微信支付服务商配置 |
-| PUT | /api/v1/platform/settings | 更新平台基础信息、订阅收款配置和服务商配置 |
-| GET | /api/v1/platform/payment-configs | 查询租户收款配置审核列表 |
-| POST | /api/v1/platform/payment-configs/{id}/audit | 审核租户子商户收款配置 |
+| GET | /api/v1/platform/settings | 获取平台全局设置与平台微信支付配置 |
+| PUT | /api/v1/platform/settings | 更新平台基础信息和平台统一收款配置 |
+| GET | /api/v1/platform/payment-configs | 查询租户结算资料审核列表 |
+| POST | /api/v1/platform/payment-configs/{id}/audit | 审核租户结算资料 |
 | GET | /api/v1/platform/after-sale-reasons | 售后原因列表 |
 | POST | /api/v1/platform/after-sale-reasons | 新增售后原因 |
 | PUT | /api/v1/platform/after-sale-reasons/{id} | 修改售后原因 |
@@ -673,9 +688,9 @@ tenant_id，含 type(cash/discount/shipping)、threshold_amount、discount_value
 | GET | /api/v1/platform/bills | 账单列表 |
 | GET | /api/v1/platform/bills/revenue | 收入报表 |
 
-平台侧 `PUT /api/v1/platform/settings` 请求体除平台名称、Logo、客服信息和订阅收款 `wxpay_*` 字段外，还支持服务商字段：`sp_appid`、`sp_mchid`、`sp_apiv3_key`、`sp_cert_serial`、`partner_notify_url`。服务商字段用于顾客订单服务商下单和回调校验；订阅收款 `wxpay_*` 字段仅用于租户套餐续费，不能混用。
+平台侧 `PUT /api/v1/platform/settings` 请求体除平台名称、Logo、客服信息外，`wxpay_*` 字段作为平台统一微信收款配置，前期同时用于租户套餐订阅付款和顾客订单付款。`sp_appid`、`sp_mchid`、`sp_apiv3_key`、`sp_cert_serial`、`partner_notify_url` 作为后续服务商模式预留字段，前期不参与顾客订单支付门禁。
 
-平台审核租户收款配置时，审核通过才允许 `enabled=1`。审核列表必须展示租户、`sub_mchid`、`sub_appid`、历史 `mch_id/app_id`、回调地址、审核状态和提交时间，便于平台排查配置来源。
+平台审核租户结算资料时，审核通过才允许 `enabled=1`。审核列表必须展示租户、结算方式、历史商户号或子商户号兼容信息、备注、审核状态和提交时间，便于平台排查结算资料来源。
 
 平台售后原因管理用于统一小程序售后申请下拉项。原因配置变更即时影响新申请，不回写历史售后单；历史售后单保留申请时的 `reason` 文本快照。
 
@@ -706,7 +721,7 @@ tenant_id，含 type(cash/discount/shipping)、threshold_amount、discount_value
 5. 手机号解密：session_key（AES-256-CBC）解密 encryptedData
 ```
 
-### 5.2 微信支付（JSAPI / 服务商模式）
+### 5.2 微信支付（平台统一收款 / JSAPI）
 
 ```
 1. 平台订阅付款：统一下单 POST https://api.mch.weixin.qq.com/v3/pay/transactions/jsapi
@@ -716,29 +731,29 @@ tenant_id，含 type(cash/discount/shipping)、threshold_amount、discount_value
    - out_trade_no 对应 tenant_subscription_orders.order_no
    - 回调 POST /api/v1/public/subscription/callback
 
-2. 顾客订单付款：服务商下单 POST https://api.mch.weixin.qq.com/v3/pay/partner/transactions/jsapi
-   Header: Authorization: WECHATPAY2-SHA256-RSA2048（服务商证书签名）
-   Body: {sp_appid, sp_mchid, sub_appid, sub_mchid, description, out_trade_no, notify_url, amount:{total}, payer:{sp_openid/sub_openid}}
-   - sp_appid/sp_mchid 使用平台服务商配置
-   - sub_appid/sub_mchid 使用当前租户审核通过的子商户配置
+2. 顾客订单付款：统一下单 POST https://api.mch.weixin.qq.com/v3/pay/transactions/jsapi
+   Header: Authorization: WECHATPAY2-SHA256-RSA2048（平台商户证书签名）
+   Body: {appid, mchid, description, out_trade_no, notify_url, amount:{total}, payer:{openid}}
+   - appid/mchid 使用平台统一收款配置
+   - 订单所属租户写入 payments.tenant_id / payments.settlement_tenant_id，作为后续账期结算归属
    - out_trade_no 对应 payments.payment_no
    - 回调 POST /api/v1/payments/callback/wechat
 
 3. 拿 prepay_id，生成调起小程序支付参数
 4. 回调处理
    - 验证签名（微信使用 AES-256-GCM 加密）
-   - 校验 out_trade_no、金额、sp_mchid/sub_mchid、trade_state
+   - 校验 out_trade_no、金额、平台 mchid、trade_state
    - 解密后处理：
      更新payment状态 → 更新order状态 → 扣库存 → 发积分 → 计算分佣
    - 返回 HTTP 200 + {"code":"SUCCESS","message":"SUCCESS"}
 5. 本地开发环境无真实微信支付配置时，`POST /api/v1/member/payments` 可创建支付记录并模拟支付成功，用于验证“待支付 → 待发货 → 处理中 → 已发货 → 已完成”的页面和接口链路；该能力不得作为生产支付替代。
 ```
 
-上线门禁：服务商模式未完成真实签名、验签、回调解密、金额校验和子商户校验前，不得开启生产顾客订单支付。若需要灰度，应按租户开关启用服务商支付，未启用租户保持“收款配置未完成”的明确错误态。
+上线门禁：平台统一收款模式未完成真实签名、验签、回调解密、金额校验和平台商户号校验前，不得开启生产顾客订单支付。租户结算资料未审核通过时不阻塞顾客支付，但账期结算必须把该租户标记为“结算资料未完成”。
 
 ### 5.3 小程序多租户方案
 
-**推荐：模板小程序模式（服务商模式）**
+**推荐：模板小程序模式（平台统一收款）**
 
 - 平台统一注册"半自动小程序"
 - 每个租户通过 ext.json 隔离配置

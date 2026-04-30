@@ -26,6 +26,14 @@ type Client struct {
 
 func NewClient(cfg Config) *Client { return &Client{cfg: cfg} }
 
+// Configured 返回是否已具备最小可用配置。
+func (c *Client) Configured() bool {
+	if c == nil {
+		return false
+	}
+	return c.cfg.AppID != "" && c.cfg.MchID != ""
+}
+
 type JSAPIOrderReq struct {
 	Description string
 	OutTradeNo  string

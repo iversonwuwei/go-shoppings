@@ -45,7 +45,7 @@ func (r *PaymentConfigRepo) Upsert(ctx context.Context, m *model.TenantPaymentCo
 	m.Enabled = 0
 	return r.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "tenant_id"}, {Name: "provider"}},
-		DoUpdates: clause.AssignmentColumns([]string{"mch_id", "app_id", "sp_appid", "sp_mchid", "sub_appid", "sub_mchid", "api_v3_key", "cert_serial_no", "private_key_pem", "cert_pem", "notify_url", "submitted_at", "audit_status", "audit_remark", "enabled", "updated_at"}),
+		DoUpdates: clause.AssignmentColumns([]string{"mch_id", "app_id", "sp_appid", "sp_mchid", "sub_appid", "sub_mchid", "settlement_account_name", "settlement_account_no", "settlement_bank_name", "settlement_remark", "api_v3_key", "cert_serial_no", "private_key_pem", "cert_pem", "notify_url", "submitted_at", "audit_status", "audit_remark", "enabled", "updated_at"}),
 	}).Create(m).Error
 }
 
