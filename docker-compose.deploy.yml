@@ -1,0 +1,55 @@
+name: go-shoppings
+
+services:
+  gateway:
+    image: nginx:1.27-alpine
+    container_name: wechat-mall-gateway
+    restart: unless-stopped
+    depends_on:
+      - api
+      - ai-image
+    ports:
+      - "${API_HOST_PORT:-18080}:80"
+    volumes:
+      - ./gateway/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+
+  api:
+    image: "${API_IMAGE:?Set API_IMAGE}"
+    container_name: wechat-mall-api
+    restart: unless-stopped
+    expose:
+      - "8080"
+    environment:
+      APP_ENV: "${APP_ENV:-production}"
+      DATABASE_URL: "${SUPABASE_DB_DSN:-}"
+      DATABASE_PREFER_SIMPLE_PROTOCOL: "${DATABASE_PREFER_SIMPLE_PROTOCOL:-true}"
+      REDIS_HOST: "redis"
+      REDIS_PORT: "${REDIS_PORT:-6379}"
+      JWT_SECRET: "${JWT_SECRET:-your-jwt-secret-key-change-in-production}"
+      STORAGE_TYPE: "${STORAGE_TYPE:-supabase}"
+      SUPABASE_URL: "${SUPABASE_URL:-}"
+      SUPABASE_SERVICE_ROLE_KEY: "${SUPABASE_SERVICE_ROLE_KEY:-}"
+      SUPABASE_STORAGE_BUCKET: "${SUPABASE_STORAGE_BUCKET:-wxmall}"
+      SUPABASE_STORAGE_PUBLIC_READ: "${SUPABASE_STORAGE_PUBLIC_READ:-true}"
+      SUPABASE_STORAGE_CREATE_BUCKET: "${SUPABASE_STORAGE_CREATE_BUCKET:-true}"
+      SUPABASE_STORAGE_UPSERT: "${SUPABASE_STORAGE_UPSERT:-true}"
+      AI_IMAGE_ENABLED: "${AI_IMAGE_ENABLED:-true}"
+      AI_IMAGE_SERVICE_URL: "${AI_IMAGE_SERVICE_URL:-http://ai-image:8090}"
+    volumes:
+      - uploads:/app/uploads
+
+  ai-image:
+    image: "${AI_IMAGE:?Set AI_IMAGE}"
+    container_name: wechat-mall-ai-image
+    restart: unless-stopped
+    expose:
+      - "8090"
+    environment:
+      MINIMAX_API_KEY: "${MINIMAX_API_KEY:-}"
+      MINIMAX_API_BASE_URL: "${MINIMAX_API_BASE_URL:-https://api.minimaxi.com/v1}"
+      MINIMAX_IMAGE_MODEL: "${MINIMAX_IMAGE_MODEL:-image-01}"
+      MINIMAX_IMAGE_ENDPOINT: "${MINIMAX_IMAGE_ENDPOINT:-/image_generation}"
+      MINIMAX_TIMEOUT_SECONDS: "${MINIMAX_TIMEOUT_SECONDS:-120}"
+
+volumes:
+  uploads:

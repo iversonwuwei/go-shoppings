@@ -9,6 +9,7 @@ on:
       - ".dockerignore"
       - "Dockerfile"
       - "docker-compose.app.yml"
+      - "docker-compose.deploy.yml"
       - "docker-compose.infra.yml"
       - "gateway/**"
       - "go.mod"
@@ -27,6 +28,7 @@ on:
       - ".dockerignore"
       - "Dockerfile"
       - "docker-compose.app.yml"
+      - "docker-compose.deploy.yml"
       - "docker-compose.infra.yml"
       - "gateway/**"
       - "go.mod"
@@ -93,6 +95,8 @@ jobs:
           docker compose -f docker-compose.infra.yml config --quiet
           docker compose -f docker-compose.app.yml config --quiet
           docker compose -f docker-compose.infra.yml -f docker-compose.app.yml config --quiet
+          API_IMAGE=wechat-mall-api:test AI_IMAGE=wechat-mall-ai-image:test docker compose -f docker-compose.deploy.yml config --quiet
+          API_IMAGE=wechat-mall-api:test AI_IMAGE=wechat-mall-ai-image:test docker compose -f docker-compose.infra.yml -f docker-compose.deploy.yml config --quiet
 
       - name: Build API Docker image
         run: docker build -t wechat-mall-api:${{ github.sha }} -f Dockerfile .
@@ -194,7 +198,6 @@ jobs:
       DEPLOY_SSH_KEY: ${{ secrets['DEPLOY_SSH_KEY'] }}
       DEPLOY_PORT: ${{ secrets['DEPLOY_PORT'] }}
       DEPLOY_PATH: ${{ secrets['DEPLOY_PATH'] }}
-      DEPLOY_BRANCH: ${{ secrets['DEPLOY_BRANCH'] }}
       APPLY_DATABASE_MIGRATIONS: ${{ secrets['APPLY_DATABASE_MIGRATIONS'] }}
       API_IMAGE: ${{ needs.publish.outputs.api_image }}
       AI_IMAGE: ${{ needs.publish.outputs.ai_image }}
@@ -213,13 +216,11 @@ jobs:
 
           DEPLOY_PORT="${DEPLOY_PORT:-22}"
           DEPLOY_PATH="${DEPLOY_PATH:-/srv/go-shoppings}"
-          DEPLOY_BRANCH="${DEPLOY_BRANCH:-master}"
           APPLY_DATABASE_MIGRATIONS="${APPLY_DATABASE_MIGRATIONS:-true}"
 
           {
             echo "DEPLOY_PORT=$DEPLOY_PORT"
             echo "DEPLOY_PATH=$DEPLOY_PATH"
-            echo "DEPLOY_BRANCH=$DEPLOY_BRANCH"
             echo "APPLY_DATABASE_MIGRATIONS=$APPLY_DATABASE_MIGRATIONS"
           } >> "$GITHUB_ENV"
 
@@ -228,31 +229,34 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -p "$DEPLOY_PORT" "$DEPLOY_HOST" >> ~/.ssh/known_hosts
 
-      - name: Update remote checkout
+      - name: Sync runtime deployment files
         shell: bash
         run: |
           set -euo pipefail
-          REPOSITORY_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          command -v tar >/dev/null
+
+          bundle_dir="$(mktemp -d)"
+          trap 'rm -rf "$bundle_dir"' EXIT
+          mkdir -p "$bundle_dir/gateway"
+          cp docker-compose.infra.yml "$bundle_dir/docker-compose.infra.yml"
+          cp docker-compose.deploy.yml "$bundle_dir/docker-compose.deploy.yml"
+          cp gateway/nginx.conf "$bundle_dir/gateway/nginx.conf"
+
+          remote_check_cmd='command -v docker >/dev/null && docker compose version >/dev/null && command -v tar >/dev/null'
+          ssh -i ~/.ssh/deploy_key -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" "$remote_check_cmd"
+
           ssh -i ~/.ssh/deploy_key -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
-            "DEPLOY_PATH=$(printf '%q' "$DEPLOY_PATH") DEPLOY_BRANCH=$(printf '%q' "$DEPLOY_BRANCH") REPOSITORY_URL=$(printf '%q' "$REPOSITORY_URL") bash -s" <<'REMOTE'
+            "DEPLOY_PATH=$(printf '%q' "$DEPLOY_PATH") bash -s" <<'REMOTE'
           set -euo pipefail
-
-          command -v git >/dev/null
-          command -v docker >/dev/null
-          docker compose version >/dev/null
-
-          mkdir -p "$(dirname "$DEPLOY_PATH")"
-          if [ ! -e "$DEPLOY_PATH" ]; then
-            git clone --branch "$DEPLOY_BRANCH" "$REPOSITORY_URL" "$DEPLOY_PATH"
-          elif [ ! -d "$DEPLOY_PATH/.git" ]; then
-            echo "Deploy path exists but is not a git checkout: $DEPLOY_PATH" >&2
-            exit 1
-          fi
-
-          cd "$DEPLOY_PATH"
-          git fetch origin "$DEPLOY_BRANCH"
-          git reset --hard "origin/$DEPLOY_BRANCH"
+          mkdir -p "$DEPLOY_PATH"
+          find "$DEPLOY_PATH" -mindepth 1 -maxdepth 1 \
+            ! -name '.env' \
+            ! -name '.deploy-images.env' \
+            -exec rm -rf {} +
           REMOTE
+
+          remote_extract_cmd="$(printf 'tar -xzf - -C %q' "$DEPLOY_PATH")"
+          tar -C "$bundle_dir" -czf - . | ssh -i ~/.ssh/deploy_key -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" "$remote_extract_cmd"
 
       - name: Sync environment file
         shell: bash
@@ -280,6 +284,37 @@ jobs:
           rm -f "$REMOTE_ENV"
           REMOTE
 
+      - name: Apply database migrations
+        shell: bash
+        env:
+          DEPLOY_ENV_FILE: ${{ secrets['DEPLOY_ENV_FILE'] }}
+        run: |
+          set -euo pipefail
+          if [ "$APPLY_DATABASE_MIGRATIONS" = "false" ]; then
+            echo "Database migrations skipped by APPLY_DATABASE_MIGRATIONS=false"
+            exit 0
+          fi
+          if [ ! -d scripts/migrations ]; then
+            echo "No scripts/migrations directory found; skipping migrations"
+            exit 0
+          fi
+          if [ -z "$DEPLOY_ENV_FILE" ]; then
+            echo "DEPLOY_ENV_FILE is required to apply migrations without storing migration files on the server" >&2
+            exit 1
+          fi
+
+          tmp_env="$(mktemp)"
+          trap 'rm -f "$tmp_env"' EXIT
+          printf '%s\n' "$DEPLOY_ENV_FILE" > "$tmp_env"
+          docker run --rm --env-file "$tmp_env" -v "$PWD/scripts/migrations:/migrations:ro" postgres:15-alpine sh -c '
+            set -e
+            for file in /migrations/*.sql; do
+              [ -e "$file" ] || continue
+              echo "Applying $(basename "$file")"
+              psql "$SUPABASE_DB_DSN" -v ON_ERROR_STOP=1 -f "$file"
+            done
+          '
+
       - name: Login to Huawei SWR on server
         shell: bash
         env:
@@ -295,7 +330,7 @@ jobs:
           remote_login_cmd="$(printf 'docker login %q -u %q --password-stdin' "$HUAWEI_SWR_REGISTRY" "$HUAWEI_SWR_USERNAME")"
           printf '%s\n' "$HUAWEI_SWR_PASSWORD" | ssh -i ~/.ssh/deploy_key -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" "$remote_login_cmd"
 
-      - name: Apply migrations and deploy services
+      - name: Deploy services
         shell: bash
         run: |
           set -euo pipefail
@@ -303,24 +338,13 @@ jobs:
           : "${AI_IMAGE:?Missing AI image from publish job}"
 
           ssh -i ~/.ssh/deploy_key -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
-            "DEPLOY_PATH=$(printf '%q' "$DEPLOY_PATH") APPLY_DATABASE_MIGRATIONS=$(printf '%q' "$APPLY_DATABASE_MIGRATIONS") API_IMAGE=$(printf '%q' "$API_IMAGE") AI_IMAGE=$(printf '%q' "$AI_IMAGE") bash -s" <<'REMOTE'
+            "DEPLOY_PATH=$(printf '%q' "$DEPLOY_PATH") API_IMAGE=$(printf '%q' "$API_IMAGE") AI_IMAGE=$(printf '%q' "$AI_IMAGE") bash -s" <<'REMOTE'
           set -euo pipefail
           cd "$DEPLOY_PATH"
 
           if [ ! -f .env ]; then
             echo "Missing $DEPLOY_PATH/.env. Set DEPLOY_ENV_FILE or create the file on the server." >&2
             exit 1
-          fi
-
-          if [ "$APPLY_DATABASE_MIGRATIONS" != "false" ] && [ -d scripts/migrations ]; then
-            docker run --rm --env-file .env -v "$PWD/scripts/migrations:/migrations:ro" postgres:15-alpine sh -c '
-              set -e
-              for file in /migrations/*.sql; do
-                [ -e "$file" ] || continue
-                echo "Applying $(basename "$file")"
-                psql "$SUPABASE_DB_DSN" -v ON_ERROR_STOP=1 -f "$file"
-              done
-            '
           fi
 
           docker compose -f docker-compose.infra.yml up -d redis
@@ -342,9 +366,9 @@ jobs:
           IMAGES
 
           export API_IMAGE AI_IMAGE
-          docker compose -f docker-compose.app.yml pull gateway api ai-image
-          docker compose -f docker-compose.app.yml up -d --no-build gateway api ai-image
-          docker compose -f docker-compose.infra.yml -f docker-compose.app.yml ps
+          docker compose -f docker-compose.deploy.yml pull gateway api ai-image
+          docker compose -f docker-compose.deploy.yml up -d --no-build gateway api ai-image
+          docker compose -f docker-compose.infra.yml -f docker-compose.deploy.yml ps
 
           api_port="$(grep -E '^API_HOST_PORT=' .env | tail -n 1 | cut -d '=' -f 2- | tr -d '"' || true)"
           api_port="${api_port:-18080}"
