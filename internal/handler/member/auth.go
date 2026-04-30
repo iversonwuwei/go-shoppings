@@ -6,18 +6,15 @@ import (
 	"wechat-mall-saas/internal/pkg/ctxkeys"
 	apperr "wechat-mall-saas/internal/pkg/errors"
 	"wechat-mall-saas/internal/pkg/response"
-	"wechat-mall-saas/internal/pkg/wxapp"
-	"wechat-mall-saas/internal/repository"
 	"wechat-mall-saas/internal/service"
 )
 
 type AuthHandler struct {
-	auth    *service.AuthService
-	tenants *repository.TenantRepo
+	auth *service.AuthService
 }
 
-func NewAuthHandler(a *service.AuthService, t *repository.TenantRepo) *AuthHandler {
-	return &AuthHandler{auth: a, tenants: t}
+func NewAuthHandler(a *service.AuthService) *AuthHandler {
+	return &AuthHandler{auth: a}
 }
 
 type wxLoginReq struct {
@@ -52,11 +49,6 @@ func (h *AuthHandler) LoginByWechat(c *gin.Context) {
 		response.Fail(c, apperr.ErrTenantRequired)
 		return
 	}
-	tenant, err := h.tenants.FindByID(c.Request.Context(), t.ID)
-	if err != nil || tenant == nil {
-		response.Fail(c, apperr.ErrTenantInvalid)
-		return
-	}
 	var req wxLoginReq
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.FailCode(c, 20001, err.Error())
@@ -68,21 +60,7 @@ func (h *AuthHandler) LoginByWechat(c *gin.Context) {
 		Avatar:   req.Avatar,
 		Gender:   req.Gender,
 	}
-	if tenant.WechatAppID == "" || tenant.WechatSecret == "" {
-		if !h.auth.AllowMemberDevLogin() {
-			response.Fail(c, apperr.New(20010, "租户未配置微信小程序"))
-			return
-		}
-		res, err := h.auth.MemberDevLoginByWechat(c.Request.Context(), input)
-		if err != nil {
-			response.Fail(c, err)
-			return
-		}
-		response.OK(c, res)
-		return
-	}
-	wx := wxapp.NewClient(tenant.WechatAppID, tenant.WechatSecret)
-	res, err := h.auth.MemberLoginByWechat(c.Request.Context(), wx, input)
+	res, err := h.auth.MemberLoginByWechat(c.Request.Context(), input)
 	if err != nil {
 		response.Fail(c, err)
 		return

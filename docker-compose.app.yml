@@ -29,6 +29,8 @@ services:
       REDIS_HOST: "redis"
       REDIS_PORT: "${REDIS_PORT:-6379}"
       JWT_SECRET: "${JWT_SECRET:-your-jwt-secret-key-change-in-production}"
+      WECHAT_APP_ID: "${WECHAT_APP_ID:-}"
+      WECHAT_APP_SECRET: "${WECHAT_APP_SECRET:-}"
       STORAGE_TYPE: "${STORAGE_TYPE:-supabase}"
       SUPABASE_URL: "${SUPABASE_URL:-}"
       SUPABASE_SERVICE_ROLE_KEY: "${SUPABASE_SERVICE_ROLE_KEY:-}"

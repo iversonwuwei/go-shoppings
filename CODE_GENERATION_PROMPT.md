@@ -58,7 +58,7 @@ wechat-mall-saas/
 
 **tenants（租户表）**
 - id, code(varchar30,unique), company_name, contact_name, contact_phone, contact_email
-- wechat_appid, wechat_secret（加密）
+- wechat_appid, wechat_secret（加密，仅用于后续租户独立小程序 / 私有化小程序扩展；平台统一小程序会员登录不得依赖租户 AppID）
 - wechat_mchid, wechat_apiv3_key（加密）, wechat_cert_serial 为历史直连商户号兼容字段；顾客订单生产支付不得依赖这些字段
 - plan_id（外键plans）, plan_expire_at, status（0待审核/1正常/2欠费/3封禁）
 - brand_name, brand_logo, brand_theme, brand_domain（品牌定制）
@@ -118,6 +118,12 @@ wechat-mall-saas/
 - parent_id（推荐人）, level1_count, level2_count, status
 - last_login_at, created_at, updated_at, deleted_at（软删除）
 - 唯一索引：(tenant_id, openid), (tenant_id, phone)
+
+**小程序会员登录契约**
+- 平台默认是一个统一微信小程序承载多租户商城，`wx.login` 得到的 code 必须用平台统一小程序 `wechat.app_id` / `wechat.app_secret` 换取 openid。
+- 小程序启动时通过 query/scene/defaultTenantCode 解析当前租户，会员接口携带 `X-Tenant-ID`。
+- 登录时按 `(tenant_id, openid)` 查找会员；不存在则创建带当前 `tenant_id` 的会员。相同微信用户进入不同租户时，对应不同会员记录。
+- `tenants.wechat_appid` / `tenants.wechat_secret` 不作为平台统一小程序会员登录的前置条件，只保留给租户独立小程序能力。
 
 **member_levels（会员等级表）** - tenant_id
 - id, tenant_id, name, icon, color, min_growth, discount_rate, points_mult, sort, created_at
@@ -283,7 +289,7 @@ var Plans = []Plan{
 - POST /api/v1/admin/auth/refresh {refresh_token} → {token}
 - POST /api/v1/tenant/register {company_name, contact_info, plan_id} → {tenant_id, status}
 - GET /api/v1/tenant/plans → [plans]
-- PUT /api/v1/tenant/wechat-config {appid, secret, mchid, apiv3_key, cert_serial}
+- PUT /api/v1/tenant/wechat-config {appid, secret, mchid, apiv3_key, cert_serial} → 租户独立小程序 / 历史直连支付扩展配置；平台统一小程序会员登录不得依赖该接口
 - GET /api/v1/platform/tenants（平台：分页+状态筛选）
 - POST /api/v1/platform/tenants/{id}/audit {status, reject_reason}
 - PUT /api/v1/platform/tenants/{id}/status

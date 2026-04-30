@@ -22,7 +22,15 @@
 - 微信支付服务商 + 子商户模式作为后续增强能力保留字段和迁移空间，前期顾客订单支付不得强依赖租户子商户配置。
 - 非生产环境可保留模拟支付以验证订单状态流；生产环境缺少平台微信支付配置时必须拒绝支付下单，不能降级为模拟成功。
 
-### 1.3 技术选型
+### 1.3 小程序会员登录归属原则
+
+平台默认采用统一微信小程序承载多租户商城。C 端用户进入某个租户商城后，会员登录应使用当前小程序的统一 AppID / AppSecret 调用微信 `code2session` 获取用户 `openid`，而不是使用租户自己的小程序 AppID。
+
+会员归属由当前租户上下文决定：小程序先通过启动参数、scene 或默认租户编码解析出租户，后续会员接口必须携带 `X-Tenant-ID`。后端使用 `(tenant_id, openid)` 查找会员；若不存在，则创建带当前 `tenant_id` 的会员记录。同一个微信用户进入不同租户时，可以在不同 `tenant_id` 下拥有相互隔离的会员记录。
+
+租户表中的 `wechat_appid` / `wechat_secret` 仅作为后续“租户独立小程序 / 私有化小程序”能力的扩展配置，不应作为平台统一小程序会员登录的前置条件。生产环境缺少平台统一小程序配置时，正式微信登录必须拒绝；非生产环境可使用开发登录兜底。
+
+### 1.4 技术选型
 
 | 层级 | 技术选型 | 说明 |
 |------|---------|------|
@@ -250,8 +258,8 @@ const (
 | contact_name | VARCHAR(50) | 联系人 |
 | contact_phone | VARCHAR(20) | 联系电话 |
 | contact_email | VARCHAR(100) | 联系邮箱 |
-| wechat_appid | VARCHAR(50) | 微信小程序 AppID |
-| wechat_secret | VARCHAR(100) | 微信小程序 AppSecret（加密） |
+| wechat_appid | VARCHAR(50) | 租户独立小程序 AppID（预留扩展；平台统一小程序登录不依赖） |
+| wechat_secret | VARCHAR(100) | 租户独立小程序 AppSecret（加密，预留扩展） |
 | wechat_mchid | VARCHAR(30) | 历史直连商户号字段，仅兼容旧配置；前期顾客订单生产支付以平台 `wxpay_mch_id` 为准 |
 | wechat_apiv3_key | VARCHAR(100) | 历史直连 APIv3 密钥（加密），平台统一收款模式不依赖该字段 |
 | wechat_cert_serial | VARCHAR(100) | 历史直连支付证书序列号 |
@@ -309,7 +317,7 @@ tenant_id + openid 唯一，含 level_id（会员等级）、points、growth_val
 
 小程序端会员登录以当前租户下微信用户的 `openid` 为身份主键：微信用户进入商城后调用 `wx.login` 获取 code，后端向微信换取 openid；若当前租户已存在该 openid 的会员，则读取并刷新该会员的会话、微信资料和最近登录时间；若不存在，则自动创建会员后签发会员 Token，并继续执行用户原本要完成的浏览、领券、下单、查看订单等操作。手机号属于后续授权绑定资料，不是微信登录/自动注册的前置条件；数据库唯一约束只能限制已绑定手机号的会员，不能阻塞多个未绑定手机号的微信会员注册。
 
-本地开发环境（`app.env != production`）允许租户暂未配置微信小程序 AppID/Secret：`login-by-wechat` 会降级为开发微信会员登录，使用当前租户内固定的本地 openid 创建或读取会员，便于开发者工具调试登录后流程。生产环境必须配置租户微信小程序，不能启用该降级路径。
+本地开发环境（`app.env != production`）允许平台统一小程序 AppID/Secret 暂未配置：`login-by-wechat` 会降级为开发微信会员登录，使用当前租户内固定的本地 openid 创建或读取会员，便于开发者工具调试登录后流程。生产环境必须配置平台统一小程序 AppID/Secret，不能启用该降级路径。
 
 #### member_levels（会员等级表）
 
@@ -519,7 +527,7 @@ tenant_id，含 type(cash/discount/shipping)、threshold_amount、discount_value
 | POST | /api/v1/member/distribution/bind | 绑定邀请人 |
 | GET | /api/v1/member/distribution/commissions | 我的佣金记录 |
 
-`POST /api/v1/member/auth/login-by-wechat` 请求体至少包含 `code`，可同时携带 `nickname`、`avatar`、`gender`。响应返回 `{ token, member }`：`member` 为当前租户下匹配 openid 的既有会员，或本次自动创建的新会员。若会员已被商户禁用，登录和会员端鉴权接口均返回认证错误，前端应清理本租户会员会话并引导重新登录或联系商户。开发环境下，如果当前租户未配置微信小程序 AppID/Secret，该接口不调用微信 `code2session`，而是使用固定本地 openid 走同一套会员读取/自动注册流程；生产环境仍返回“租户未配置微信小程序”。
+`POST /api/v1/member/auth/login-by-wechat` 请求体至少包含 `code`，可同时携带 `nickname`、`avatar`、`gender`。响应返回 `{ token, member }`：`member` 为当前租户下匹配 openid 的既有会员，或本次自动创建的新会员。若会员已被商户禁用，登录和会员端鉴权接口均返回认证错误，前端应清理本租户会员会话并引导重新登录或联系商户。该接口使用平台统一小程序 AppID/Secret 调用微信 `code2session`；开发环境下如果平台统一小程序未配置，则使用固定本地 openid 走同一套会员读取/自动注册流程；生产环境缺少平台统一小程序配置时返回“平台微信小程序未配置”。
 
 会员端分销接口必须位于会员鉴权之后，并受 `distribution` 套餐功能开关保护。`GET /api/v1/member/distribution` 返回 `{ settings, distributor, can_apply, invite_code, bound_parent_id }`，供个人中心展示佣金、申请状态和邀请路径；`POST /api/v1/member/distribution/apply` 幂等创建当前会员的分销员申请；`POST /api/v1/member/distribution/bind` 使用 `inviter_member_id` 绑定上级分销员会员 ID，已绑定后不可重复改绑；`GET /api/v1/member/distribution/commissions` 只返回当前会员作为分销员产生的佣金记录。未开通分销功能时返回套餐功能错误，前端展示“暂未开通”，不能表现为 404；如果店铺配置没有展示分销模块，会员中心不应主动请求分销接口，避免可选功能在控制台反复输出业务 warning。
 

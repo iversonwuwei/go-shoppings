@@ -23,11 +23,12 @@ type AuthService struct {
 	tenants *repository.TenantRepo
 	jwt     *jwtx.Manager
 	cache   *cache.Client
+	wxapp   *wxapp.Client
 	env     string
 }
 
-func NewAuthService(admins *repository.AdminRepo, members *repository.MemberRepo, tenants *repository.TenantRepo, j *jwtx.Manager, rdb *cache.Client, env string) *AuthService {
-	return &AuthService{admins: admins, members: members, tenants: tenants, jwt: j, cache: rdb, env: env}
+func NewAuthService(admins *repository.AdminRepo, members *repository.MemberRepo, tenants *repository.TenantRepo, j *jwtx.Manager, rdb *cache.Client, wx *wxapp.Client, env string) *AuthService {
+	return &AuthService{admins: admins, members: members, tenants: tenants, jwt: j, cache: rdb, wxapp: wx, env: env}
 }
 
 type AdminLoginResult struct {
@@ -138,12 +139,19 @@ func (s *AuthService) MemberDevLogin(ctx context.Context, phone, nickname string
 	return &MemberLoginResult{Token: tok, Member: m}, nil
 }
 
-// MemberLoginByWechat 通过 code 登录/注册。wx 为租户对应的 wxapp.Client。
-func (s *AuthService) MemberLoginByWechat(ctx context.Context, wx *wxapp.Client, input WechatMemberLoginInput) (*MemberLoginResult, error) {
+// MemberLoginByWechat 通过平台统一小程序 code 登录/注册。
+// 会员归属由当前请求租户上下文决定，按 tenant_id + openid 隔离。
+func (s *AuthService) MemberLoginByWechat(ctx context.Context, input WechatMemberLoginInput) (*MemberLoginResult, error) {
 	if strings.TrimSpace(input.Code) == "" {
 		return nil, apperr.ErrParamInvalid
 	}
-	sess, err := wx.Code2Session(input.Code)
+	if s.wxapp == nil || strings.TrimSpace(s.wxapp.AppID) == "" || strings.TrimSpace(s.wxapp.AppSecret) == "" {
+		if s.AllowMemberDevLogin() {
+			return s.MemberDevLoginByWechat(ctx, input)
+		}
+		return nil, apperr.New(20010, "平台微信小程序未配置")
+	}
+	sess, err := s.wxapp.Code2Session(input.Code)
 	if err != nil {
 		return nil, apperr.ErrWechatAPI
 	}
@@ -167,6 +175,9 @@ func (s *AuthService) MemberDevLoginByWechat(ctx context.Context, input WechatMe
 func (s *AuthService) memberLoginByWechatSession(ctx context.Context, sess *wxapp.Code2SessionResp, input WechatMemberLoginInput) (*MemberLoginResult, error) {
 	if sess == nil || strings.TrimSpace(sess.OpenID) == "" {
 		return nil, apperr.ErrWechatAPI
+	}
+	if repository.EnsureTenant(ctx) == 0 {
+		return nil, apperr.ErrTenantRequired
 	}
 	now := time.Now()
 	m, err := s.members.FindByOpenID(ctx, sess.OpenID)

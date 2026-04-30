@@ -99,7 +99,7 @@ docker run --rm --env-file .env -v "${PWD}\scripts\migrations:/migrations:ro" po
 | `HUAWEI_SWR_GATEWAY_REPOSITORY` | No | Gateway 镜像仓库名，默认 `wechat-mall-gateway`。 |
 | `HUAWEI_SWR_REDIS_REPOSITORY` | No | Redis 镜像仓库名，默认 `wechat-mall-redis`。 |
 
-服务器需要提前安装 Docker 和 Docker Compose 插件，并允许部署用户运行 Docker。部署用户需要能访问 `~/.docker/config.json` 以保存 SWR 登录凭据。服务器不需要安装 `git`，也不需要保存源码仓库。`.env` 至少需要包含 Supabase 数据库、Supabase Storage、JWT 和 Minimax 相关配置。
+服务器需要提前安装 Docker 和 Docker Compose 插件，并允许部署用户运行 Docker。部署用户需要能访问 `~/.docker/config.json` 以保存 SWR 登录凭据。服务器不需要安装 `git`，也不需要保存源码仓库。`.env` 至少需要包含 Supabase 数据库、Supabase Storage、JWT、平台统一微信小程序 `WECHAT_APP_ID` / `WECHAT_APP_SECRET` 和 Minimax 相关配置。
 
 ## Rollback
 
