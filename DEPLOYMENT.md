@@ -7,7 +7,7 @@
 | Stage | Trigger | Gate | Description |
 | --- | --- | --- | --- |
 | Verify backend | Pull request, push to `master`, manual run | Required | 拉取依赖、检查 `gofmt`、执行 `go vet`、运行 `go test -race -cover ./...`、编译 API/Worker 二进制、校验 Docker Compose、构建 API 与 AI 图片服务镜像。 |
-| Publish SWR images | Push to `master`, manual run | Depends on verify | 登录华为云 SWR，构建 API 与 AI 图片服务生产镜像，推送 `${GITHUB_SHA}` 与 `latest` 标签。 |
+| Publish SWR images | Push to `master`, manual run | Depends on verify | 登录华为云 SWR，构建 API 与 AI 图片服务生产镜像，推送 `${GITHUB_SHA}` 与 `latest` 标签，并将 Gateway/Redis 运行时基础镜像同步到 SWR。 |
 | Deploy Docker services | Push to `master`, manual run | Depends on publish | 通过 SSH 同步最小运行时部署工件，登录 SWR，拉取本次构建的镜像并启动 Redis、Gateway、API、AI 图片服务，最后检查 Gateway 暴露的健康接口。 |
 
 后端相关文件变更才会触发流水线，包括 Go 代码、配置、Dockerfile、Compose 文件和本 workflow。数据库迁移脚本变更不会触发部署，迁移需要按手动流程单独执行。未通过验证时不会部署。部署并发按分支串行执行，避免同一目标环境被多个 workflow 同时更新。
@@ -31,7 +31,7 @@ docker build -t wechat-mall-ai-image:local -f ai-image-service/Dockerfile ai-ima
 
 ## Production deployment path
 
-生产服务器不保存后端源码，也不在服务器本机构建后端镜像。GitHub Actions 在 `publish` 阶段将 API 与 AI 图片服务镜像推送到华为云 SWR；服务器部署阶段只保存运行时部署工件并执行 `docker pull` 与 `docker compose up --no-build`，确保生产运行的镜像和 CI 验证/发布的提交 SHA 对齐。GitHub Actions 不执行数据库迁移，也不把 `scripts/migrations` 同步到服务器。
+生产服务器不保存后端源码，也不在服务器本机构建后端镜像。GitHub Actions 在 `publish` 阶段将 API、AI 图片服务、Gateway 和 Redis 镜像推送或同步到华为云 SWR；服务器部署阶段只保存运行时部署工件并执行 `docker pull` 与 `docker compose up --no-build`，确保生产不依赖 Docker Hub。GitHub Actions 不执行数据库迁移，也不把 `scripts/migrations` 同步到服务器。
 
 服务器 `DEPLOY_PATH` 只会保留这些运行时文件和 Docker 数据：
 
@@ -52,6 +52,8 @@ gateway/nginx.conf
 ```powershell
 API_IMAGE=swr.<region>.myhuaweicloud.com/<namespace>/wechat-mall-api:<commit-sha>
 AI_IMAGE=swr.<region>.myhuaweicloud.com/<namespace>/wechat-mall-ai-image:<commit-sha>
+GATEWAY_IMAGE=swr.<region>.myhuaweicloud.com/<namespace>/wechat-mall-gateway:1.27-alpine
+REDIS_IMAGE=swr.<region>.myhuaweicloud.com/<namespace>/wechat-mall-redis:7-alpine
 ```
 
 手动在服务器重启生产镜像时，可在 `DEPLOY_PATH` 中执行：
@@ -97,6 +99,8 @@ docker run --rm --env-file .env -v "${PWD}\scripts\migrations:/migrations:ro" po
 | `HUAWEI_SWR_PASSWORD` | Yes | SWR 登录密码/登录密钥。 |
 | `HUAWEI_SWR_API_REPOSITORY` | No | API 镜像仓库名，默认 `wechat-mall-api`。 |
 | `HUAWEI_SWR_AI_IMAGE_REPOSITORY` | No | AI 图片服务镜像仓库名，默认 `wechat-mall-ai-image`。 |
+| `HUAWEI_SWR_GATEWAY_REPOSITORY` | No | Gateway 镜像仓库名，默认 `wechat-mall-gateway`。 |
+| `HUAWEI_SWR_REDIS_REPOSITORY` | No | Redis 镜像仓库名，默认 `wechat-mall-redis`。 |
 
 服务器需要提前安装 Docker 和 Docker Compose 插件，并允许部署用户运行 Docker。部署用户需要能访问 `~/.docker/config.json` 以保存 SWR 登录凭据。服务器不需要安装 `git`，也不需要保存源码仓库。`.env` 至少需要包含 Supabase 数据库、Supabase Storage、JWT 和 Minimax 相关配置。
 

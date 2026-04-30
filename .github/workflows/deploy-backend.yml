@@ -120,6 +120,8 @@ jobs:
           HUAWEI_SWR_NAMESPACE: ${{ secrets['HUAWEI_SWR_NAMESPACE'] }}
           HUAWEI_SWR_API_REPOSITORY: ${{ secrets['HUAWEI_SWR_API_REPOSITORY'] }}
           HUAWEI_SWR_AI_IMAGE_REPOSITORY: ${{ secrets['HUAWEI_SWR_AI_IMAGE_REPOSITORY'] }}
+          HUAWEI_SWR_GATEWAY_REPOSITORY: ${{ secrets['HUAWEI_SWR_GATEWAY_REPOSITORY'] }}
+          HUAWEI_SWR_REDIS_REPOSITORY: ${{ secrets['HUAWEI_SWR_REDIS_REPOSITORY'] }}
         run: |
           set -euo pipefail
           : "${HUAWEI_SWR_REGISTRY:?Set GitHub secret HUAWEI_SWR_REGISTRY}"
@@ -128,17 +130,23 @@ jobs:
           registry="${HUAWEI_SWR_REGISTRY%/}"
           api_repository="${HUAWEI_SWR_API_REPOSITORY:-wechat-mall-api}"
           ai_repository="${HUAWEI_SWR_AI_IMAGE_REPOSITORY:-wechat-mall-ai-image}"
+          gateway_repository="${HUAWEI_SWR_GATEWAY_REPOSITORY:-wechat-mall-gateway}"
+          redis_repository="${HUAWEI_SWR_REDIS_REPOSITORY:-wechat-mall-redis}"
 
           api_image="${registry}/${HUAWEI_SWR_NAMESPACE}/${api_repository}:${GITHUB_SHA}"
           ai_image="${registry}/${HUAWEI_SWR_NAMESPACE}/${ai_repository}:${GITHUB_SHA}"
           api_latest="${registry}/${HUAWEI_SWR_NAMESPACE}/${api_repository}:latest"
           ai_latest="${registry}/${HUAWEI_SWR_NAMESPACE}/${ai_repository}:latest"
+          gateway_image="${registry}/${HUAWEI_SWR_NAMESPACE}/${gateway_repository}:1.27-alpine"
+          redis_image="${registry}/${HUAWEI_SWR_NAMESPACE}/${redis_repository}:7-alpine"
 
           {
             echo "api_image=$api_image"
             echo "ai_image=$ai_image"
             echo "api_latest=$api_latest"
             echo "ai_latest=$ai_latest"
+            echo "gateway_image=$gateway_image"
+            echo "redis_image=$redis_image"
           } >> "$GITHUB_OUTPUT"
 
       - name: Login to Huawei SWR
@@ -176,6 +184,18 @@ jobs:
           docker push "${{ steps.images.outputs.ai_image }}"
           docker push "${{ steps.images.outputs.ai_latest }}"
 
+      - name: Mirror runtime base images to Huawei SWR
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker pull nginx:1.27-alpine
+          docker tag nginx:1.27-alpine "${{ steps.images.outputs.gateway_image }}"
+          docker push "${{ steps.images.outputs.gateway_image }}"
+
+          docker pull redis:7-alpine
+          docker tag redis:7-alpine "${{ steps.images.outputs.redis_image }}"
+          docker push "${{ steps.images.outputs.redis_image }}"
+
   deploy:
     name: Deploy Docker services
     runs-on: ubuntu-latest
@@ -195,6 +215,8 @@ jobs:
       HUAWEI_SWR_NAMESPACE: ${{ secrets['HUAWEI_SWR_NAMESPACE'] }}
       HUAWEI_SWR_API_REPOSITORY: ${{ secrets['HUAWEI_SWR_API_REPOSITORY'] }}
       HUAWEI_SWR_AI_IMAGE_REPOSITORY: ${{ secrets['HUAWEI_SWR_AI_IMAGE_REPOSITORY'] }}
+      HUAWEI_SWR_GATEWAY_REPOSITORY: ${{ secrets['HUAWEI_SWR_GATEWAY_REPOSITORY'] }}
+      HUAWEI_SWR_REDIS_REPOSITORY: ${{ secrets['HUAWEI_SWR_REDIS_REPOSITORY'] }}
 
     steps:
       - name: Checkout
@@ -210,10 +232,14 @@ jobs:
           registry="${HUAWEI_SWR_REGISTRY%/}"
           api_repository="${HUAWEI_SWR_API_REPOSITORY:-wechat-mall-api}"
           ai_repository="${HUAWEI_SWR_AI_IMAGE_REPOSITORY:-wechat-mall-ai-image}"
+          gateway_repository="${HUAWEI_SWR_GATEWAY_REPOSITORY:-wechat-mall-gateway}"
+          redis_repository="${HUAWEI_SWR_REDIS_REPOSITORY:-wechat-mall-redis}"
 
           {
             echo "API_IMAGE=${registry}/${HUAWEI_SWR_NAMESPACE}/${api_repository}:${GITHUB_SHA}"
             echo "AI_IMAGE=${registry}/${HUAWEI_SWR_NAMESPACE}/${ai_repository}:${GITHUB_SHA}"
+            echo "GATEWAY_IMAGE=${registry}/${HUAWEI_SWR_NAMESPACE}/${gateway_repository}:1.27-alpine"
+            echo "REDIS_IMAGE=${registry}/${HUAWEI_SWR_NAMESPACE}/${redis_repository}:7-alpine"
           } >> "$GITHUB_ENV"
 
       - name: Prepare SSH
@@ -313,9 +339,11 @@ jobs:
           set -euo pipefail
           : "${API_IMAGE:?Missing API image from publish job}"
           : "${AI_IMAGE:?Missing AI image from publish job}"
+          : "${GATEWAY_IMAGE:?Missing gateway image metadata}"
+          : "${REDIS_IMAGE:?Missing redis image metadata}"
 
           ssh -i ~/.ssh/deploy_key -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
-            "DEPLOY_PATH=$(printf '%q' "$DEPLOY_PATH") API_IMAGE=$(printf '%q' "$API_IMAGE") AI_IMAGE=$(printf '%q' "$AI_IMAGE") bash -s" <<'REMOTE'
+            "DEPLOY_PATH=$(printf '%q' "$DEPLOY_PATH") API_IMAGE=$(printf '%q' "$API_IMAGE") AI_IMAGE=$(printf '%q' "$AI_IMAGE") GATEWAY_IMAGE=$(printf '%q' "$GATEWAY_IMAGE") REDIS_IMAGE=$(printf '%q' "$REDIS_IMAGE") bash -s" <<'REMOTE'
           set -euo pipefail
           cd "$DEPLOY_PATH"
 
@@ -340,9 +368,11 @@ jobs:
           cat > .deploy-images.env <<IMAGES
           API_IMAGE=$API_IMAGE
           AI_IMAGE=$AI_IMAGE
+          GATEWAY_IMAGE=$GATEWAY_IMAGE
+          REDIS_IMAGE=$REDIS_IMAGE
           IMAGES
 
-          export API_IMAGE AI_IMAGE
+          export API_IMAGE AI_IMAGE GATEWAY_IMAGE REDIS_IMAGE
           docker compose -f docker-compose.deploy.yml pull gateway api ai-image
           docker compose -f docker-compose.deploy.yml up -d --no-build gateway api ai-image
           docker compose -f docker-compose.infra.yml -f docker-compose.deploy.yml ps

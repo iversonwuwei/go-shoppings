@@ -2,7 +2,7 @@ name: go-shoppings
 
 services:
   gateway:
-    image: nginx:1.27-alpine
+    image: "${GATEWAY_IMAGE:-nginx:1.27-alpine}"
     container_name: wechat-mall-gateway
     restart: unless-stopped
     depends_on:
