@@ -107,9 +107,6 @@ jobs:
     environment: production
     needs: verify
     if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/master') }}
-    outputs:
-      api_image: ${{ steps.images.outputs.api_image }}
-      ai_image: ${{ steps.images.outputs.ai_image }}
 
     steps:
       - name: Checkout
@@ -194,12 +191,30 @@ jobs:
       DEPLOY_SSH_KEY: ${{ secrets['DEPLOY_SSH_KEY'] }}
       DEPLOY_PORT: ${{ secrets['DEPLOY_PORT'] }}
       DEPLOY_PATH: ${{ secrets['DEPLOY_PATH'] }}
-      API_IMAGE: ${{ needs.publish.outputs.api_image }}
-      AI_IMAGE: ${{ needs.publish.outputs.ai_image }}
+      HUAWEI_SWR_REGISTRY: ${{ secrets['HUAWEI_SWR_REGISTRY'] }}
+      HUAWEI_SWR_NAMESPACE: ${{ secrets['HUAWEI_SWR_NAMESPACE'] }}
+      HUAWEI_SWR_API_REPOSITORY: ${{ secrets['HUAWEI_SWR_API_REPOSITORY'] }}
+      HUAWEI_SWR_AI_IMAGE_REPOSITORY: ${{ secrets['HUAWEI_SWR_AI_IMAGE_REPOSITORY'] }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Prepare deployment image metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${HUAWEI_SWR_REGISTRY:?Set GitHub secret HUAWEI_SWR_REGISTRY}"
+          : "${HUAWEI_SWR_NAMESPACE:?Set GitHub secret HUAWEI_SWR_NAMESPACE}"
+
+          registry="${HUAWEI_SWR_REGISTRY%/}"
+          api_repository="${HUAWEI_SWR_API_REPOSITORY:-wechat-mall-api}"
+          ai_repository="${HUAWEI_SWR_AI_IMAGE_REPOSITORY:-wechat-mall-ai-image}"
+
+          {
+            echo "API_IMAGE=${registry}/${HUAWEI_SWR_NAMESPACE}/${api_repository}:${GITHUB_SHA}"
+            echo "AI_IMAGE=${registry}/${HUAWEI_SWR_NAMESPACE}/${ai_repository}:${GITHUB_SHA}"
+          } >> "$GITHUB_ENV"
 
       - name: Prepare SSH
         shell: bash
