@@ -352,6 +352,15 @@ jobs:
             exit 1
           fi
 
+          cat > .deploy-images.env <<IMAGES
+          API_IMAGE=$API_IMAGE
+          AI_IMAGE=$AI_IMAGE
+          GATEWAY_IMAGE=$GATEWAY_IMAGE
+          REDIS_IMAGE=$REDIS_IMAGE
+          IMAGES
+
+          export API_IMAGE AI_IMAGE GATEWAY_IMAGE REDIS_IMAGE
+
           docker compose -f docker-compose.infra.yml up -d redis
           for i in $(seq 1 30); do
             if docker compose -f docker-compose.infra.yml exec -T redis redis-cli ping >/dev/null 2>&1; then
@@ -365,14 +374,6 @@ jobs:
             sleep 1
           done
 
-          cat > .deploy-images.env <<IMAGES
-          API_IMAGE=$API_IMAGE
-          AI_IMAGE=$AI_IMAGE
-          GATEWAY_IMAGE=$GATEWAY_IMAGE
-          REDIS_IMAGE=$REDIS_IMAGE
-          IMAGES
-
-          export API_IMAGE AI_IMAGE GATEWAY_IMAGE REDIS_IMAGE
           docker compose -f docker-compose.deploy.yml pull gateway api ai-image
           docker compose -f docker-compose.deploy.yml up -d --no-build gateway api ai-image
           docker compose -f docker-compose.infra.yml -f docker-compose.deploy.yml ps
