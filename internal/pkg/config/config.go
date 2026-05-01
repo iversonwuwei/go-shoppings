@@ -63,10 +63,12 @@ type JWTConfig struct {
 }
 
 type WeChatConfig struct {
-	AppID          string `mapstructure:"app_id"`
-	AppSecret      string `mapstructure:"app_secret"`
-	Token          string `mapstructure:"token"`
-	EncodingAESKey string `mapstructure:"encoding_aes_key"`
+	AppID                string `mapstructure:"app_id"`
+	AppSecret            string `mapstructure:"app_secret"`
+	Token                string `mapstructure:"token"`
+	EncodingAESKey       string `mapstructure:"encoding_aes_key"`
+	MiniQRCodeEnvVersion string `mapstructure:"mini_qrcode_env_version"`
+	MiniQRCodeCheckPath  bool   `mapstructure:"mini_qrcode_check_path"`
 }
 
 type SMSConfig struct {
@@ -164,6 +166,7 @@ func expandEnvironmentValues(config *Config) {
 	config.WeChat.AppSecret = os.ExpandEnv(config.WeChat.AppSecret)
 	config.WeChat.Token = os.ExpandEnv(config.WeChat.Token)
 	config.WeChat.EncodingAESKey = os.ExpandEnv(config.WeChat.EncodingAESKey)
+	config.WeChat.MiniQRCodeEnvVersion = os.ExpandEnv(config.WeChat.MiniQRCodeEnvVersion)
 	config.SMS.AliyunSignName = os.ExpandEnv(config.SMS.AliyunSignName)
 
 	config.Storage.Local.BaseURL = os.ExpandEnv(config.Storage.Local.BaseURL)
@@ -216,6 +219,10 @@ func applyEnvironmentOverrides(config *Config) error {
 	setStringFromEnv(&config.WeChat.AppSecret, "WECHAT_APP_SECRET", "WX_APP_SECRET", "WXAPP_APP_SECRET")
 	setStringFromEnv(&config.WeChat.Token, "WECHAT_TOKEN", "WX_TOKEN")
 	setStringFromEnv(&config.WeChat.EncodingAESKey, "WECHAT_ENCODING_AES_KEY", "WX_ENCODING_AES_KEY")
+	setStringFromEnv(&config.WeChat.MiniQRCodeEnvVersion, "WECHAT_MINI_QRCODE_ENV_VERSION", "WX_MINI_QRCODE_ENV_VERSION")
+	if err := setBoolFromEnv(&config.WeChat.MiniQRCodeCheckPath, "WECHAT_MINI_QRCODE_CHECK_PATH", "WX_MINI_QRCODE_CHECK_PATH"); err != nil {
+		return err
+	}
 	setStringFromEnv(&config.SMS.AliyunSignName, "ALIYUN_SMS_SIGN_NAME", "SMS_SIGN_NAME")
 	setStringFromEnv(&config.Storage.Type, "STORAGE_TYPE")
 

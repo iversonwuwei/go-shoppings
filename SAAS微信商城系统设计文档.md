@@ -533,6 +533,14 @@ tenant_id，含 type(cash/discount/shipping)、threshold_amount、discount_value
 
 `POST /api/v1/member/auth/login-by-wechat` 请求体至少包含 `code`，可同时携带 `nickname`、`avatar`、`gender`。响应返回 `{ token, member }`：`member` 为当前租户下匹配 openid 的既有会员，或本次自动创建的新会员。若会员已被商户禁用，登录和会员端鉴权接口均返回认证错误，前端应清理本租户会员会话并引导重新登录或联系商户。该接口使用平台统一小程序 AppID/Secret 调用微信 `code2session`；开发环境下如果平台统一小程序未配置，则使用固定本地 openid 走同一套会员读取/自动注册流程；生产环境缺少平台统一小程序配置时返回“平台微信小程序未配置”。
 
+#### 租户后台 - 小程序码
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | /api/v1/tenant/site/mini-qrcode | 当前租户管理员生成本租户入口小程序码 |
+
+`GET /api/v1/tenant/site/mini-qrcode` 必须使用平台统一小程序 `wechat.app_id` / `wechat.app_secret` 获取 access token，并调用微信 `wxa/getwxacodeunlimit` 生成真实小程序码；不得使用普通二维码或自定义 scheme 模拟。入口页固定为 `pages/home/index`，`scene` 使用 `t={tenant_code}`，小程序启动解析 `scene` 后确定当前租户。响应返回 `image_data_url`、`tenant_code`、`page`、`scene`、`path`、`env_version`、`check_path` 等字段；缺少平台统一小程序配置、AppID 不匹配或微信接口失败时，应返回明确错误，前端不能展示可误扫码的模拟图。小程序码生成环境由 `wechat.mini_qrcode_env_version` / `WECHAT_MINI_QRCODE_ENV_VERSION` 控制，可取 `release`、`trial`、`develop`；路径校验由 `wechat.mini_qrcode_check_path` / `WECHAT_MINI_QRCODE_CHECK_PATH` 控制。本地和测试环境默认 `trial + check_path=false`，用于小程序尚未发布或页面只在体验版时避免微信返回 `41030 invalid page`；生产环境默认 `release + check_path=true`，发布前必须确认 `pages/home/index` 已存在于线上正式版。
+
 会员端分销接口必须位于会员鉴权之后，并受 `distribution` 套餐功能开关保护。`GET /api/v1/member/distribution` 返回 `{ settings, distributor, can_apply, invite_code, bound_parent_id }`，供个人中心展示佣金、申请状态和邀请路径；`POST /api/v1/member/distribution/apply` 幂等创建当前会员的分销员申请；`POST /api/v1/member/distribution/bind` 使用 `inviter_member_id` 绑定上级分销员会员 ID，已绑定后不可重复改绑；`GET /api/v1/member/distribution/commissions` 只返回当前会员作为分销员产生的佣金记录。未开通分销功能时返回套餐功能错误，前端展示“暂未开通”，不能表现为 404；如果店铺配置没有展示分销模块，会员中心不应主动请求分销接口，避免可选功能在控制台反复输出业务 warning。
 
 #### 小程序端 - 商品

@@ -39,6 +39,8 @@ wechat:
   app_secret: ""            # 平台统一微信小程序 AppSecret
   token: ""                 # 微信服务器验证 Token
   encoding_aes_key: ""       # 消息加密 AES Key
+  mini_qrcode_env_version: "${WECHAT_MINI_QRCODE_ENV_VERSION}" # release / trial / develop；空值时按 APP_ENV 默认
+  mini_qrcode_check_path: false # 本地/体验版建议 false；生产空配置时后端默认按 release 开启校验
 
 sms:
   aliyun_sign_name: "${ALIYUN_SMS_SIGN_NAME}" # 阿里云已审核短信签名名称，不包含【】；页面不展示该字段

@@ -123,6 +123,7 @@ wechat-mall-saas/
 **小程序会员登录契约**
 - 平台默认是一个统一微信小程序承载多租户商城，`wx.login` 得到的 code 必须用平台统一小程序 `wechat.app_id` / `wechat.app_secret` 换取 openid。
 - 小程序启动时通过 query/scene/defaultTenantCode 解析当前租户，会员接口携带 `X-Tenant-ID`。
+- 租户后台 `GET /tenant/site/mini-qrcode` 必须调用平台统一小程序 `wxa/getwxacodeunlimit` 生成真实小程序码，`scene` 使用 `t={tenantCode}`；不得用普通 QRCode 或自定义 scheme 模拟可扫码入口，缺少 `wechat.app_id` / `wechat.app_secret` 时必须明确报错。本地/测试默认生成 `trial + check_path=false`，生产默认 `release + check_path=true`；如微信返回 `41030 invalid page`，优先确认当前 AppID 对应版本是否已包含 `pages/home/index`，或通过 `WECHAT_MINI_QRCODE_ENV_VERSION` / `WECHAT_MINI_QRCODE_CHECK_PATH` 切换到体验版/关闭路径校验。
 - 登录时按 `(tenant_id, openid)` 查找会员；不存在则创建带当前 `tenant_id` 的会员。相同微信用户进入不同租户时，对应不同会员记录。
 - `tenants.wechat_appid` / `tenants.wechat_secret` 不作为平台统一小程序会员登录的前置条件，只保留给租户独立小程序能力。
 

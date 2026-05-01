@@ -9,7 +9,6 @@ require (
 	github.com/minio/minio-go/v7 v7.0.100
 	github.com/redis/go-redis/v9 v9.5.1
 	github.com/shopspring/decimal v1.3.1
-	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/spf13/viper v1.18.2
 	github.com/subosito/gotenv v1.6.0
 	go.uber.org/zap v1.27.0

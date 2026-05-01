@@ -158,7 +158,7 @@ func main() {
 		AdminGrouponH:      admin.NewGrouponHandler(grouponRepo),
 		AdminDistributionH: admin.NewDistributionHandler(distributionRepo),
 		AdminDeliveryH:     admin.NewDeliveryHandler(deliveryRepo),
-		AdminSiteH:         admin.NewSiteConfigHandler(siteRepo),
+		AdminSiteH:         admin.NewSiteConfigHandler(siteRepo, platformWxApp, cfg.App.Env, cfg.WeChat.MiniQRCodeEnvVersion, cfg.WeChat.MiniQRCodeCheckPath),
 		AdminSubH:          admin.NewSubscriptionHandler(subscriptionSvc),
 		PlatformSettingsH:  admin.NewPlatformSettingsHandler(settingsSvc),
 		PlatformGlobalH:    admin.NewPlatformGlobalSettingsHandler(platformSettingsRepo),

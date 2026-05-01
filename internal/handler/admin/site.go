@@ -8,23 +8,45 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/skip2/go-qrcode"
 
 	"wechat-mall-saas/internal/model"
 	"wechat-mall-saas/internal/pkg/ctxkeys"
 	apperr "wechat-mall-saas/internal/pkg/errors"
 	"wechat-mall-saas/internal/pkg/response"
+	"wechat-mall-saas/internal/pkg/wxapp"
 	"wechat-mall-saas/internal/repository"
 )
 
 // SiteConfigHandler 合并处理 custom_domain / white_label / private_deployment
 // 各 section 的写入由前端 section 参数标识；具体字段按 section 生效。
 type SiteConfigHandler struct {
-	repo *repository.SiteConfigRepo
+	repo                 *repository.SiteConfigRepo
+	wxapp                *wxapp.Client
+	miniQRCodeEnvVersion string
+	miniQRCodeCheckPath  bool
 }
 
-func NewSiteConfigHandler(r *repository.SiteConfigRepo) *SiteConfigHandler {
-	return &SiteConfigHandler{repo: r}
+func NewSiteConfigHandler(r *repository.SiteConfigRepo, wx *wxapp.Client, appEnv, miniQRCodeEnvVersion string, miniQRCodeCheckPath bool) *SiteConfigHandler {
+	envVersion, checkPath := normalizeMiniQRCodeOptions(appEnv, miniQRCodeEnvVersion, miniQRCodeCheckPath)
+	return &SiteConfigHandler{repo: r, wxapp: wx, miniQRCodeEnvVersion: envVersion, miniQRCodeCheckPath: checkPath}
+}
+
+func normalizeMiniQRCodeOptions(appEnv, envVersion string, checkPath bool) (string, bool) {
+	version := strings.ToLower(strings.TrimSpace(envVersion))
+	switch version {
+	case "release", "trial", "develop":
+		return version, checkPath
+	case "":
+		if strings.EqualFold(strings.TrimSpace(appEnv), "production") {
+			return "release", true
+		}
+		return "trial", false
+	default:
+		if strings.EqualFold(strings.TrimSpace(appEnv), "production") {
+			return "release", true
+		}
+		return "trial", false
+	}
 }
 
 type storefrontQuickEntry struct {
@@ -325,12 +347,17 @@ func (h *SiteConfigHandler) MiniQRCode(c *gin.Context) {
 	}
 	page := "pages/home/index"
 	scene := fmt.Sprintf("t=%s", code)
-	query := fmt.Sprintf("tenantCode=%s", url.QueryEscape(code))
+	query := fmt.Sprintf("scene=%s", url.QueryEscape(scene))
 	path := fmt.Sprintf("%s?%s", page, query)
-	payload := fmt.Sprintf("go-shoppings-miniprogram://%s", path)
-	png, err := qrcode.Encode(payload, qrcode.Medium, 360)
+	png, err := h.wxapp.GetUnlimitedQRCode(ctx, wxapp.UnlimitedQRCodeRequest{
+		Scene:      scene,
+		Page:       page,
+		CheckPath:  h.miniQRCodeCheckPath,
+		EnvVersion: h.miniQRCodeEnvVersion,
+		Width:      360,
+	})
 	if err != nil {
-		response.Fail(c, err)
+		response.Fail(c, apperr.New(40001, err.Error()))
 		return
 	}
 	response.OK(c, gin.H{
@@ -340,9 +367,12 @@ func (h *SiteConfigHandler) MiniQRCode(c *gin.Context) {
 		"scene":          scene,
 		"query":          query,
 		"path":           path,
-		"qr_payload":     payload,
+		"qr_payload":     path,
+		"provider":       "wechat_getwxacodeunlimit",
+		"env_version":    h.miniQRCodeEnvVersion,
+		"check_path":     h.miniQRCodeCheckPath,
 		"image_data_url": "data:image/png;base64," + base64.StdEncoding.EncodeToString(png),
-		"simulated":      true,
+		"simulated":      false,
 	})
 }
 
