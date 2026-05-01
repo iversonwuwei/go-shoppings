@@ -2,9 +2,9 @@ package model
 
 import "time"
 
-// SmsSetting 短信网关配置，每租户 1 行
+// SmsSetting 短信网关配置：tenant_id=0 表示平台自身配置，tenant_id>0 表示租户配置。
 type SmsSetting struct {
-	TenantID     uint64    `gorm:"primaryKey" json:"tenant_id"`
+	TenantID     uint64    `gorm:"primaryKey;autoIncrement:false" json:"tenant_id"`
 	Enabled      int8      `gorm:"not null;default:0" json:"enabled"`
 	Provider     string    `gorm:"size:32;not null;default:'aliyun'" json:"provider"`
 	AccessKey    string    `gorm:"size:128;not null;default:''" json:"access_key"`

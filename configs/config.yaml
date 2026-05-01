@@ -40,6 +40,9 @@ wechat:
   token: ""                 # 微信服务器验证 Token
   encoding_aes_key: ""       # 消息加密 AES Key
 
+sms:
+  aliyun_sign_name: "${ALIYUN_SMS_SIGN_NAME}" # 阿里云已审核短信签名名称，不包含【】；页面不展示该字段
+
 # 平台统一微信支付商户（SaaS 订阅付费走此商户号；租户的商品订单仍走各自租户 mch）
 wxpay:
   app_id: ""                 # 平台 AppID

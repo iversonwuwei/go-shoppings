@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"wechat-mall-saas/internal/model"
 )
@@ -25,44 +26,80 @@ func (r *SmsRepo) PlatformGetGlobalSettings(ctx context.Context) (*model.SmsSett
 }
 
 func (r *SmsRepo) PlatformUpsertGlobalSettings(ctx context.Context, s *model.SmsSetting) error {
+	now := time.Now()
+	row := &model.SmsSetting{
+		TenantID:     0,
+		Enabled:      s.Enabled,
+		Provider:     s.Provider,
+		AccessKey:    s.AccessKey,
+		AccessSecret: s.AccessSecret,
+		SignName:     s.SignName,
+		Region:       s.Region,
+		Remark:       s.Remark,
+		UpdatedAt:    now,
+	}
+	if err := r.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "tenant_id"}},
+		DoUpdates: clause.AssignmentColumns([]string{"enabled", "provider", "access_key", "access_secret", "sign_name", "region", "remark", "updated_at"}),
+	}).Create(row).Error; err != nil {
+		return err
+	}
 	s.TenantID = 0
-	s.UpdatedAt = time.Now()
-	return r.db.WithContext(ctx).Save(s).Error
+	s.UpdatedAt = now
+	return nil
 }
 
-// 平台：按租户列模板（tenantID=0 表示所有）
-func (r *SmsRepo) PlatformListTemplates(ctx context.Context, tenantID uint64) ([]model.SmsTemplate, error) {
-	q := r.db.WithContext(ctx).Model(&model.SmsTemplate{})
-	if tenantID > 0 {
-		q = q.Where("tenant_id = ?", tenantID)
-	}
+func (r *SmsRepo) PlatformListTemplates(ctx context.Context) ([]model.SmsTemplate, error) {
 	var rows []model.SmsTemplate
-	err := q.Order("id DESC").Find(&rows).Error
+	err := r.db.WithContext(ctx).Where("tenant_id = 0").Order("id DESC").Find(&rows).Error
 	return rows, err
+}
+
+func (r *SmsRepo) PlatformCreateTemplate(ctx context.Context, t *model.SmsTemplate) error {
+	t.TenantID = 0
+	var existing model.SmsTemplate
+	err := r.db.WithContext(ctx).Where("tenant_id = 0 AND code = ?", t.Code).Order("id DESC").First(&existing).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return r.db.WithContext(ctx).Create(t).Error
+	}
+	if err != nil {
+		return err
+	}
+	fields := map[string]interface{}{
+		"name":        t.Name,
+		"template_id": t.TemplateID,
+		"content":     t.Content,
+		"enabled":     t.Enabled,
+		"updated_at":  time.Now(),
+	}
+	if err := r.db.WithContext(ctx).Model(&model.SmsTemplate{}).Where("id = ? AND tenant_id = 0", existing.ID).Updates(fields).Error; err != nil {
+		return err
+	}
+	t.ID = existing.ID
+	t.CreatedAt = existing.CreatedAt
+	t.UpdatedAt = time.Now()
+	return nil
 }
 
 func (r *SmsRepo) PlatformUpdateTemplateAny(ctx context.Context, id uint64, fields map[string]interface{}) error {
 	fields["updated_at"] = time.Now()
 	return r.db.WithContext(ctx).Model(&model.SmsTemplate{}).
-		Where("id = ?", id).Updates(fields).Error
+		Where("id = ? AND tenant_id = 0", id).Updates(fields).Error
 }
 
 func (r *SmsRepo) PlatformDeleteTemplateAny(ctx context.Context, id uint64) error {
-	return r.db.WithContext(ctx).Delete(&model.SmsTemplate{}, id).Error
+	return r.db.WithContext(ctx).Where("tenant_id = 0").Delete(&model.SmsTemplate{}, id).Error
 }
 
-// 平台：列所有短信日志，可按 tenant_id / phone 过滤
-func (r *SmsRepo) PlatformListLogs(ctx context.Context, tenantID uint64, phone string, page, size int) ([]model.SmsLog, int64, error) {
+// 平台：仅列平台自身短信日志，可按 phone 过滤。
+func (r *SmsRepo) PlatformListLogs(ctx context.Context, phone string, page, size int) ([]model.SmsLog, int64, error) {
 	if page <= 0 {
 		page = 1
 	}
 	if size <= 0 || size > 200 {
 		size = 20
 	}
-	q := r.db.WithContext(ctx).Model(&model.SmsLog{})
-	if tenantID > 0 {
-		q = q.Where("tenant_id = ?", tenantID)
-	}
+	q := r.db.WithContext(ctx).Model(&model.SmsLog{}).Where("tenant_id = 0")
 	if phone != "" {
 		q = q.Where("phone = ?", phone)
 	}

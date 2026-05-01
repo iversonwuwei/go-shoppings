@@ -16,6 +16,7 @@ type Config struct {
 	Redis     RedisConfig     `mapstructure:"redis"`
 	JWT       JWTConfig       `mapstructure:"jwt"`
 	WeChat    WeChatConfig    `mapstructure:"wechat"`
+	SMS       SMSConfig       `mapstructure:"sms"`
 	WxPay     WxPayConfig     `mapstructure:"wxpay"`
 	Storage   StorageConfig   `mapstructure:"storage"`
 	AIImage   AIImageConfig   `mapstructure:"ai_image"`
@@ -66,6 +67,10 @@ type WeChatConfig struct {
 	AppSecret      string `mapstructure:"app_secret"`
 	Token          string `mapstructure:"token"`
 	EncodingAESKey string `mapstructure:"encoding_aes_key"`
+}
+
+type SMSConfig struct {
+	AliyunSignName string `mapstructure:"aliyun_sign_name"`
 }
 
 // WxPayConfig 平台统一微信支付商户（用于 SaaS 租户订阅付费）
@@ -159,6 +164,7 @@ func expandEnvironmentValues(config *Config) {
 	config.WeChat.AppSecret = os.ExpandEnv(config.WeChat.AppSecret)
 	config.WeChat.Token = os.ExpandEnv(config.WeChat.Token)
 	config.WeChat.EncodingAESKey = os.ExpandEnv(config.WeChat.EncodingAESKey)
+	config.SMS.AliyunSignName = os.ExpandEnv(config.SMS.AliyunSignName)
 
 	config.Storage.Local.BaseURL = os.ExpandEnv(config.Storage.Local.BaseURL)
 	config.Storage.Local.Path = os.ExpandEnv(config.Storage.Local.Path)
@@ -210,6 +216,7 @@ func applyEnvironmentOverrides(config *Config) error {
 	setStringFromEnv(&config.WeChat.AppSecret, "WECHAT_APP_SECRET", "WX_APP_SECRET", "WXAPP_APP_SECRET")
 	setStringFromEnv(&config.WeChat.Token, "WECHAT_TOKEN", "WX_TOKEN")
 	setStringFromEnv(&config.WeChat.EncodingAESKey, "WECHAT_ENCODING_AES_KEY", "WX_ENCODING_AES_KEY")
+	setStringFromEnv(&config.SMS.AliyunSignName, "ALIYUN_SMS_SIGN_NAME", "SMS_SIGN_NAME")
 	setStringFromEnv(&config.Storage.Type, "STORAGE_TYPE")
 
 	setStringFromEnv(&config.Storage.Supabase.ProjectURL, "SUPABASE_URL", "SUPABASE_PROJECT_URL")

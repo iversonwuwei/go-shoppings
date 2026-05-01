@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"wechat-mall-saas/internal/pkg/cache"
 	apperr "wechat-mall-saas/internal/pkg/errors"
 	"wechat-mall-saas/internal/pkg/jwtx"
+	"wechat-mall-saas/internal/pkg/smsgateway"
 	"wechat-mall-saas/internal/pkg/utils"
 	"wechat-mall-saas/internal/pkg/wxapp"
 	"wechat-mall-saas/internal/repository"
@@ -24,11 +26,14 @@ type AuthService struct {
 	jwt     *jwtx.Manager
 	cache   *cache.Client
 	wxapp   *wxapp.Client
+	smsRepo *repository.SmsRepo
+	sms     *smsgateway.Client
+	smsSign string
 	env     string
 }
 
-func NewAuthService(admins *repository.AdminRepo, members *repository.MemberRepo, tenants *repository.TenantRepo, j *jwtx.Manager, rdb *cache.Client, wx *wxapp.Client, env string) *AuthService {
-	return &AuthService{admins: admins, members: members, tenants: tenants, jwt: j, cache: rdb, wxapp: wx, env: env}
+func NewAuthService(admins *repository.AdminRepo, members *repository.MemberRepo, tenants *repository.TenantRepo, j *jwtx.Manager, rdb *cache.Client, wx *wxapp.Client, smsRepo *repository.SmsRepo, smsClient *smsgateway.Client, smsSignName, env string) *AuthService {
+	return &AuthService{admins: admins, members: members, tenants: tenants, jwt: j, cache: rdb, wxapp: wx, smsRepo: smsRepo, sms: smsClient, smsSign: strings.TrimSpace(smsSignName), env: env}
 }
 
 type AdminLoginResult struct {
@@ -272,7 +277,9 @@ func gen6Digit() string {
 
 // SendVerifyCode 生成并下发短信验证码。非 production 环境会把验证码回传，便于联调。
 // purpose: apply / login / reset_password
+
 func (s *AuthService) SendVerifyCode(ctx context.Context, phone, purpose string) (string, error) {
+	phone = strings.TrimSpace(phone)
 	if phone == "" {
 		return "", apperr.ErrParamInvalid
 	}
@@ -292,11 +299,87 @@ func (s *AuthService) SendVerifyCode(ctx context.Context, phone, purpose string)
 	if err := s.cache.Set(ctx, codeKey(purpose, phone), code, 5*time.Minute).Err(); err != nil {
 		return "", err
 	}
-	// TODO: 真实短信网关对接。当前仅在非生产环境回传验证码。
+	devCode := ""
 	if s.env != "" && s.env != "production" {
-		return code, nil
+		devCode = code
 	}
-	return "", nil
+	sent, err := s.sendVerifyCodeSMS(ctx, phone, purpose, code)
+	if err != nil {
+		_ = s.cache.Del(ctx, codeKey(purpose, phone), codeLockKey(purpose, phone)).Err()
+		return "", err
+	}
+	if !sent {
+		if devCode != "" {
+			return devCode, nil
+		}
+		_ = s.cache.Del(ctx, codeKey(purpose, phone), codeLockKey(purpose, phone)).Err()
+		return "", apperr.New(30014, "短信服务未启用或未配置")
+	}
+	return devCode, nil
+}
+
+func (s *AuthService) sendVerifyCodeSMS(ctx context.Context, phone, purpose, code string) (bool, error) {
+	if s.smsRepo == nil {
+		return false, nil
+	}
+	setting, err := s.smsRepo.GetSettingsByTenantID(ctx, 0)
+	if err != nil {
+		return false, err
+	}
+	if setting == nil || setting.Enabled != 1 {
+		return false, nil
+	}
+	if s.sms == nil {
+		return false, apperr.New(30015, "短信发送客户端未初始化")
+	}
+	if strings.TrimSpace(setting.Provider) != "" && !strings.EqualFold(setting.Provider, "aliyun") {
+		return false, apperr.New(30015, "当前仅支持阿里云短信服务")
+	}
+	tpl, err := s.smsRepo.GetTemplateByCode(ctx, 0, purpose)
+	if err != nil {
+		return false, err
+	}
+	if tpl == nil || strings.TrimSpace(tpl.TemplateID) == "" {
+		return false, apperr.New(30016, fmt.Sprintf("短信模板未配置或未启用：%s", purpose))
+	}
+	signName := strings.TrimSpace(setting.SignName)
+	if signName == "" {
+		signName = s.smsSign
+	}
+	if signName == "" {
+		return false, apperr.New(30017, "请在平台短信设置中填写阿里云短信签名名称")
+	}
+	params, _ := json.Marshal(map[string]string{"code": code})
+	log := &model.SmsLog{
+		TenantID: 0,
+		Phone:    phone,
+		Code:     purpose,
+		Content:  fmt.Sprintf("template=%s param_keys=code", tpl.TemplateID),
+		Status:   2,
+	}
+	resp, err := s.sms.SendAliyun(ctx, smsgateway.SendRequest{
+		AccessKeyID:     setting.AccessKey,
+		AccessKeySecret: setting.AccessSecret,
+		Endpoint:        setting.Region,
+		PhoneNumbers:    phone,
+		SignName:        signName,
+		TemplateCode:    tpl.TemplateID,
+		TemplateParam:   string(params),
+		OutID:           fmt.Sprintf("%s-%d", purpose, time.Now().UnixNano()),
+	})
+	if err != nil {
+		log.Error = err.Error()
+		_ = s.smsRepo.CreateLog(ctx, log)
+		return false, err
+	}
+	log.Status = 1
+	if resp != nil {
+		log.BizID = resp.BizID
+	}
+	if err := s.smsRepo.CreateLog(ctx, log); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // VerifyAndConsumeCode 校验验证码并消费（成功后删除）

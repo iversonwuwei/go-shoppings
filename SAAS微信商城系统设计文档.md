@@ -407,7 +407,11 @@ tenant_id，含 type(cash/discount/shipping)、threshold_amount、discount_value
 
 #### sms_settings / sms_templates / sms_logs（短信通知表）
 
-短信配置、模板和发送日志分表存储，覆盖验证码、订单通知、套餐到期提醒等流程。
+短信配置、模板和发送日志分表存储，覆盖验证码、订单通知、套餐到期提醒等流程。`tenant_id=0` 固定表示平台自身短信能力，用于平台入驻申请、平台管理员登录、找回密码等平台侧验证码或通知；`tenant_id>0` 表示租户自己的短信能力，应由租户管理/商户侧配置和使用。
+
+平台端 `/platform/sms` 只维护平台自身短信能力和平台功能到短信模板的绑定，不承载租户短信审核或租户模板维护。租户不需要配置短信服务，平台入驻申请、平台用户短信登录、找回密码等验证码统一使用平台短信服务。
+
+阿里云短信发送使用已有短信服务时，平台不在本系统内申请模板或签名，签名审核与模板审核都在阿里云控制台完成。平台页面维护 `access_key`/`access_secret`、已审核签名名称、以及一个阿里云验证码 `TemplateCode`（例如 `SMS_123456789`）。启用短信时必须同时填写 AK/SK、签名名称和 TemplateCode；保存时系统自动把该模板 Code 绑定到 `apply`（入驻申请验证码）、`login`（平台用户短信登录）、`reset_password`（平台用户找回密码）三个平台验证码用途。签名名称保存到平台短信配置，作为运行时 `ALIYUN_SMS_SIGN_NAME` 的页面配置来源；环境变量 `ALIYUN_SMS_SIGN_NAME` 仅作为后端兜底。页面不提供 Endpoint/Region、备注等手动配置项。发送时后端调用阿里云 `SendSms`，传入 `PhoneNumbers`、页面保存或服务端配置的已审核签名名称、`TemplateCode` 和 `TemplateParam={"code":"六位验证码"}`；签名名称不包含 `【】`；阿里云模板变量应使用 `${code}`。
 
 #### api_tokens / api_request_logs（开放 API 表）
 
@@ -697,6 +701,15 @@ tenant_id，含 type(cash/discount/shipping)、threshold_amount、discount_value
 | DELETE | /api/v1/platform/after-sale-reasons/{id} | 删除未使用的售后原因 |
 | GET | /api/v1/platform/bills | 账单列表 |
 | GET | /api/v1/platform/bills/revenue | 收入报表 |
+| GET | /api/v1/platform/sms/settings | 获取平台自身短信网关配置（tenant_id=0） |
+| PUT | /api/v1/platform/sms/settings | 更新平台自身短信网关配置（tenant_id=0） |
+| GET | /api/v1/platform/sms/templates | 查询平台功能绑定的阿里云 TemplateCode（tenant_id=0） |
+| POST | /api/v1/platform/sms/templates | 为固定平台功能首次保存阿里云 TemplateCode |
+| PUT | /api/v1/platform/sms/templates/{id} | 更换固定平台功能绑定的阿里云 TemplateCode |
+| DELETE | /api/v1/platform/sms/templates/{id} | 删除平台自身短信模板 |
+| GET | /api/v1/platform/sms/logs | 查询平台自身短信发送日志（tenant_id=0） |
+
+验证码发送成功后，前端只提示“验证码已发送”等固定文案；即使本地联调接口返回 `dev_code`，也不得把验证码展示在 toast / message / notification 等临时提示中。
 
 平台侧 `PUT /api/v1/platform/settings` 请求体除平台名称、Logo、客服信息外，`wxpay_*` 字段作为平台统一微信收款配置，前期同时用于租户套餐订阅付款和顾客订单付款。`sp_appid`、`sp_mchid`、`sp_apiv3_key`、`sp_cert_serial`、`partner_notify_url` 作为后续服务商模式预留字段，前期不参与顾客订单支付门禁。
 

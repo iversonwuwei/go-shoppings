@@ -21,8 +21,12 @@ func (r *SmsRepo) GetSettings(ctx context.Context) (*model.SmsSetting, error) {
 	if tid == 0 {
 		return nil, nil
 	}
+	return r.GetSettingsByTenantID(ctx, tid)
+}
+
+func (r *SmsRepo) GetSettingsByTenantID(ctx context.Context, tenantID uint64) (*model.SmsSetting, error) {
 	var s model.SmsSetting
-	if err := r.db.WithContext(ctx).Where("tenant_id = ?", tid).First(&s).Error; err != nil {
+	if err := r.db.WithContext(ctx).Where("tenant_id = ?", tenantID).First(&s).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
@@ -43,6 +47,17 @@ func (r *SmsRepo) ListTemplates(ctx context.Context) ([]model.SmsTemplate, error
 	var rows []model.SmsTemplate
 	err := TenantDB(ctx, r.db).Order("id DESC").Find(&rows).Error
 	return rows, err
+}
+
+func (r *SmsRepo) GetTemplateByCode(ctx context.Context, tenantID uint64, code string) (*model.SmsTemplate, error) {
+	var row model.SmsTemplate
+	if err := r.db.WithContext(ctx).Where("tenant_id = ? AND code = ? AND enabled = 1", tenantID, code).First(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &row, nil
 }
 
 func (r *SmsRepo) CreateTemplate(ctx context.Context, t *model.SmsTemplate) error {
@@ -80,4 +95,8 @@ func (r *SmsRepo) ListLogs(ctx context.Context, phone string, page, size int) ([
 	var rows []model.SmsLog
 	err := q.Order("id DESC").Offset((page - 1) * size).Limit(size).Find(&rows).Error
 	return rows, total, err
+}
+
+func (r *SmsRepo) CreateLog(ctx context.Context, row *model.SmsLog) error {
+	return r.db.WithContext(ctx).Create(row).Error
 }

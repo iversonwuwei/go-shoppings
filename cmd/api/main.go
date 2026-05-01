@@ -21,6 +21,7 @@ import (
 	"wechat-mall-saas/internal/pkg/database"
 	"wechat-mall-saas/internal/pkg/jwtx"
 	"wechat-mall-saas/internal/pkg/logger"
+	"wechat-mall-saas/internal/pkg/smsgateway"
 	"wechat-mall-saas/internal/pkg/storage"
 	"wechat-mall-saas/internal/pkg/wxapp"
 	"wechat-mall-saas/internal/pkg/wxpay"
@@ -107,7 +108,8 @@ func main() {
 	// ========== 装配 Service ==========
 	tenantSvc := service.NewTenantService(tenantRepo, adminRepo, planRepo, tenantPlanLogRepo, rdb)
 	platformWxApp := wxapp.NewClient(cfg.WeChat.AppID, cfg.WeChat.AppSecret)
-	authSvc := service.NewAuthService(adminRepo, memberRepo, tenantRepo, jwtMgr, rdb, platformWxApp, cfg.App.Env)
+	smsClient := smsgateway.NewClient()
+	authSvc := service.NewAuthService(adminRepo, memberRepo, tenantRepo, jwtMgr, rdb, platformWxApp, smsRepo, smsClient, cfg.SMS.AliyunSignName, cfg.App.Env)
 	productSvc := service.NewProductService(productRepo, skuRepo, categoryRepo, tenantSvc)
 	categorySvc := service.NewCategoryService(categoryRepo, tenantCategoryAssetRepo)
 	orderSvc := service.NewOrderService(orderRepo, orderLogRepo, orderMessageRepo, productRepo, skuRepo, couponRepo, memberCouponRepo, tenantSvc)

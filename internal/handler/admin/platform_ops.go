@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -30,8 +31,6 @@ type platformSmsSettingsReq struct {
 	AccessKey    string `json:"access_key"`
 	AccessSecret string `json:"access_secret"`
 	SignName     string `json:"sign_name"`
-	Region       string `json:"region"`
-	Remark       string `json:"remark"`
 }
 
 func (h *PlatformSmsHandler) GetSettings(c *gin.Context) {
@@ -57,12 +56,22 @@ func (h *PlatformSmsHandler) UpdateSettings(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
+	old, _ := h.repo.PlatformGetGlobalSettings(ctx)
 	if req.AccessSecret == "********" {
-		if old, _ := h.repo.PlatformGetGlobalSettings(ctx); old != nil {
+		if old != nil {
 			req.AccessSecret = old.AccessSecret
 		} else {
 			req.AccessSecret = ""
 		}
+	}
+	if req.Enabled == 1 && (req.AccessKey == "" || req.AccessSecret == "") {
+		response.FailCode(c, 20001, "请填写阿里云 AccessKey 和 AccessSecret")
+		return
+	}
+	req.SignName = strings.TrimSpace(req.SignName)
+	if req.Enabled == 1 && req.SignName == "" {
+		response.FailCode(c, 20001, "请填写阿里云短信签名名称")
+		return
 	}
 	provider := req.Provider
 	if provider == "" {
@@ -74,8 +83,10 @@ func (h *PlatformSmsHandler) UpdateSettings(c *gin.Context) {
 		AccessKey:    req.AccessKey,
 		AccessSecret: req.AccessSecret,
 		SignName:     req.SignName,
-		Region:       req.Region,
-		Remark:       req.Remark,
+	}
+	if old != nil {
+		s.Region = old.Region
+		s.Remark = old.Remark
 	}
 	if err := h.repo.PlatformUpsertGlobalSettings(ctx, s); err != nil {
 		response.Fail(c, err)
@@ -86,8 +97,7 @@ func (h *PlatformSmsHandler) UpdateSettings(c *gin.Context) {
 }
 
 func (h *PlatformSmsHandler) ListTemplates(c *gin.Context) {
-	tid, _ := strconv.ParseUint(c.Query("tenant_id"), 10, 64)
-	rows, err := h.repo.PlatformListTemplates(c.Request.Context(), tid)
+	rows, err := h.repo.PlatformListTemplates(c.Request.Context())
 	if err != nil {
 		response.Fail(c, err)
 		return
@@ -103,6 +113,47 @@ type platformSmsTemplateReq struct {
 	Enabled    int8   `json:"enabled"`
 }
 
+func platformSmsTemplateName(code string) (string, bool) {
+	switch code {
+	case "apply":
+		return "入驻申请验证码", true
+	case "login":
+		return "平台短信登录", true
+	case "reset_password":
+		return "找回密码验证码", true
+	default:
+		return "", false
+	}
+}
+
+func (h *PlatformSmsHandler) CreateTemplate(c *gin.Context) {
+	var req platformSmsTemplateReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.FailCode(c, 20001, err.Error())
+		return
+	}
+	name, ok := platformSmsTemplateName(req.Code)
+	if !ok {
+		response.FailCode(c, 20001, "不支持的短信业务用途")
+		return
+	}
+	if req.Name != "" {
+		name = req.Name
+	}
+	t := &model.SmsTemplate{
+		Code:       req.Code,
+		Name:       name,
+		TemplateID: req.TemplateID,
+		Content:    req.Content,
+		Enabled:    couponStatus(req.Enabled),
+	}
+	if err := h.repo.PlatformCreateTemplate(c.Request.Context(), t); err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, t)
+}
+
 // 平台更新模板状态 / 内容（审核）
 func (h *PlatformSmsHandler) UpdateTemplate(c *gin.Context) {
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
@@ -115,12 +166,20 @@ func (h *PlatformSmsHandler) UpdateTemplate(c *gin.Context) {
 		response.FailCode(c, 20001, err.Error())
 		return
 	}
+	name, ok := platformSmsTemplateName(req.Code)
+	if !ok {
+		response.FailCode(c, 20001, "不支持的短信业务用途")
+		return
+	}
+	if req.Name != "" {
+		name = req.Name
+	}
 	fields := map[string]interface{}{
 		"code":        req.Code,
-		"name":        req.Name,
+		"name":        name,
 		"template_id": req.TemplateID,
 		"content":     req.Content,
-		"enabled":     defaultCouponStatus(req.Enabled),
+		"enabled":     couponStatus(req.Enabled),
 	}
 	if err := h.repo.PlatformUpdateTemplateAny(c.Request.Context(), id, fields); err != nil {
 		response.Fail(c, err)
@@ -143,11 +202,10 @@ func (h *PlatformSmsHandler) DeleteTemplate(c *gin.Context) {
 }
 
 func (h *PlatformSmsHandler) ListLogs(c *gin.Context) {
-	tid, _ := strconv.ParseUint(c.Query("tenant_id"), 10, 64)
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	size, _ := strconv.Atoi(c.DefaultQuery("size", "20"))
 	phone := c.Query("phone")
-	rows, total, err := h.repo.PlatformListLogs(c.Request.Context(), tid, phone, page, size)
+	rows, total, err := h.repo.PlatformListLogs(c.Request.Context(), phone, page, size)
 	if err != nil {
 		response.Fail(c, err)
 		return

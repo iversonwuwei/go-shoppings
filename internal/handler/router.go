@@ -165,6 +165,7 @@ func New(d *Deps) *gin.Engine {
 		sec.GET("/sms/settings", d.PlatformSmsH.GetSettings)
 		sec.PUT("/sms/settings", d.PlatformSmsH.UpdateSettings)
 		sec.GET("/sms/templates", d.PlatformSmsH.ListTemplates)
+		sec.POST("/sms/templates", d.PlatformSmsH.CreateTemplate)
 		sec.PUT("/sms/templates/:id", d.PlatformSmsH.UpdateTemplate)
 		sec.DELETE("/sms/templates/:id", d.PlatformSmsH.DeleteTemplate)
 		sec.GET("/sms/logs", d.PlatformSmsH.ListLogs)

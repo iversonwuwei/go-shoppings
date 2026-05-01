@@ -85,6 +85,7 @@ wechat-mall-saas/
 - 初始化脚本和迁移脚本必须覆盖运行态 Go 模型中声明的表，避免接口流程进入后才暴露 `relation does not exist`。
 - 增量建表必须幂等：`CREATE TABLE IF NOT EXISTS`、`ALTER TABLE ... ADD COLUMN IF NOT EXISTS`、`CREATE INDEX IF NOT EXISTS`。
 - 当前必须覆盖的增量流程表：`api_tokens`、`api_request_logs`、`sms_settings`、`sms_templates`、`sms_logs`、`tenant_payment_configs`、`distribution_settings`、`distributors`、`commission_logs`、`groupon_activities`、`groupons`、`groupon_members`、`points_settings`、`delivery_settings`、`tenant_subscription_orders`。
+- 短信表使用 `tenant_id=0` 表示平台自身短信能力，服务平台入驻、平台管理员短信登录、找回密码等流程；`tenant_id>0` 才表示租户短信能力，必须放在租户管理边界内维护。
 - 当前必须覆盖的租户扩展字段：`tenants.billing_cycle`、`tenants.extra_features`。
 - 服务商支付迁移必须补齐 `tenant_payment_configs.sp_mchid/sp_appid/sub_mchid/sub_appid`，以及 `payments.sp_mchid/sp_appid/sub_mchid/sub_appid/settlement_tenant_id/pay_scene`，并提供 information_schema 校验 SQL。
 
@@ -286,6 +287,7 @@ var Plans = []Plan{
 ### 认证与租户
 - POST /api/v1/admin/auth/login {username, password} → {token, admin_info}
 - 商户登录必须携带 X-Tenant-ID，并校验管理员 tenant_id 与请求租户一致；租户编号解析需兼容大小写输入；本地演示商户账号为租户编号 TEST001、用户名 smokeadmin22、密码 admin123。
+- 验证码发送接口即使在联调环境返回 `dev_code`，前端也不得把验证码展示在 toast / message / notification 等临时提示中。
 - POST /api/v1/admin/auth/refresh {refresh_token} → {token}
 - POST /api/v1/tenant/register {company_name, contact_info, plan_id} → {tenant_id, status}
 - GET /api/v1/tenant/plans → [plans]
@@ -392,6 +394,18 @@ var Plans = []Plan{
 - GET /api/v1/platform/payment-configs {page,size,status} → 租户子商户配置审核列表
 - POST /api/v1/platform/payment-configs/{id}/audit {approve, remark} → 审核通过后 enabled=1
 - 服务商字段用于顾客订单，wxpay_* 字段用于平台订阅收款，两条链路不得复用。
+
+### 平台端 - 短信配置
+
+- GET /api/v1/platform/sms/settings → 平台自身短信网关配置，固定 `tenant_id=0`
+- PUT /api/v1/platform/sms/settings {enabled,provider,access_key,access_secret,sign_name} → 更新平台自身短信网关密钥和已审核签名名称；`access_secret='********'` 表示保留原值；启用时必须提供 AK/SK 和签名名称；平台页面不得暴露 Endpoint/Region、备注等字段
+- GET /api/v1/platform/sms/templates → 平台验证码用途绑定的阿里云 TemplateCode 列表，固定 `tenant_id=0`
+- POST /api/v1/platform/sms/templates {code,name,template_id,content,enabled} → 为固定平台验证码用途首次保存或幂等更新阿里云 TemplateCode，`code` 仅允许 `apply` / `login` / `reset_password`
+- PUT /api/v1/platform/sms/templates/{id} {code,name,template_id,content,enabled} → 更换固定平台验证码用途绑定的阿里云 TemplateCode
+- DELETE /api/v1/platform/sms/templates/{id} → 删除平台自身模板
+- GET /api/v1/platform/sms/logs {page,size,phone} → 查询平台自身短信日志，固定 `tenant_id=0`
+- 租户不需要配置短信服务；平台入驻申请、平台用户短信登录、找回密码等验证码统一使用平台短信服务。
+- 阿里云已有 SMS 服务接入规则：签名审核与模板审核都在阿里云控制台完成，平台页面保存 AK/SK、已审核签名名称和一个验证码 `TemplateCode`；启用时必须同时填写 AK/SK、签名名称和 TemplateCode，保存时自动绑定到 `apply` / `login` / `reset_password` 三个验证码用途，`template_id` 映射阿里云 `TemplateCode`，发送参数固定包含 `PhoneNumbers`、页面保存或服务端兜底配置的签名名称、`TemplateCode`、`TemplateParam={"code":"六位验证码"}`；页面保存的签名名称优先，`sms.aliyun_sign_name` / `ALIYUN_SMS_SIGN_NAME` 仅作为后端兜底。
 
 ### 管理端 - 优惠券/拼团/秒杀/分销（CRUD + 统计）
 

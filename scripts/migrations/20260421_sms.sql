@@ -1,6 +1,6 @@
 -- 短信通知功能
 CREATE TABLE IF NOT EXISTS "sms_settings" (
-    "tenant_id"    BIGINT PRIMARY KEY REFERENCES "tenants"("id"),
+    "tenant_id"    BIGINT PRIMARY KEY DEFAULT 0,
     "enabled"      SMALLINT NOT NULL DEFAULT 0,
     "provider"     VARCHAR(32) NOT NULL DEFAULT 'aliyun', -- aliyun / tencent
     "access_key"   VARCHAR(128) NOT NULL DEFAULT '',

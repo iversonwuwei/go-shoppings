@@ -31,6 +31,7 @@ services:
       JWT_SECRET: "${JWT_SECRET:-your-jwt-secret-key-change-in-production}"
       WECHAT_APP_ID: "${WECHAT_APP_ID:-}"
       WECHAT_APP_SECRET: "${WECHAT_APP_SECRET:-}"
+      ALIYUN_SMS_SIGN_NAME: "${ALIYUN_SMS_SIGN_NAME:-}"
       STORAGE_TYPE: "${STORAGE_TYPE:-supabase}"
       SUPABASE_URL: "${SUPABASE_URL:-}"
       SUPABASE_SERVICE_ROLE_KEY: "${SUPABASE_SERVICE_ROLE_KEY:-}"
