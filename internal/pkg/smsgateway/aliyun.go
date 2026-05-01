@@ -71,12 +71,12 @@ func (c *Client) SendAliyun(ctx context.Context, input SendRequest) (*SendRespon
 	nonce := randomHex(16)
 	acsDate := time.Now().UTC().Format("2006-01-02T15:04:05Z")
 	headers := map[string]string{
-		"host":                 endpoint,
-		"x-acs-action":         "SendSms",
-		"x-acs-content-sha256": payloadHash,
-		"x-acs-date":           acsDate,
+		"host":                  endpoint,
+		"x-acs-action":          "SendSms",
+		"x-acs-content-sha256":  payloadHash,
+		"x-acs-date":            acsDate,
 		"x-acs-signature-nonce": nonce,
-		"x-acs-version":        "2017-05-25",
+		"x-acs-version":         "2017-05-25",
 	}
 	signedHeaders := "host;x-acs-action;x-acs-content-sha256;x-acs-date;x-acs-signature-nonce;x-acs-version"
 	canonicalQuery := canonicalQuery(query)
