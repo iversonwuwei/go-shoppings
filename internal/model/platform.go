@@ -110,27 +110,27 @@ func (TenantSubscriptionOrder) TableName() string { return "tenant_subscription_
 
 // PlatformSettings 平台全局设置（单行，id 固定为 1）
 type PlatformSettings struct {
-	ID               uint64    `gorm:"primaryKey" json:"id"`
-	PlatformName     string    `json:"platform_name"`
-	PlatformLogo     string    `json:"platform_logo"`
-	SupportPhone     string    `json:"support_phone"`
-	SupportEmail     string    `json:"support_email"`
+	ID                         uint64    `gorm:"primaryKey" json:"id"`
+	PlatformName               string    `json:"platform_name"`
+	PlatformLogo               string    `json:"platform_logo"`
+	SupportPhone               string    `json:"support_phone"`
+	SupportEmail               string    `json:"support_email"`
 	PrivacyPolicyTitle         string    `gorm:"column:privacy_policy_title" json:"privacy_policy_title"`
 	PrivacyPolicyEffectiveDate string    `gorm:"column:privacy_policy_effective_date" json:"privacy_policy_effective_date"`
 	PrivacyPolicyContent       string    `gorm:"column:privacy_policy_content" json:"privacy_policy_content"`
 	PrivacyPolicyContactPhone  string    `gorm:"column:privacy_policy_contact_phone" json:"privacy_policy_contact_phone"`
 	PrivacyPolicyContactEmail  string    `gorm:"column:privacy_policy_contact_email" json:"privacy_policy_contact_email"`
-	WxpayAppID       string    `gorm:"column:wxpay_app_id" json:"wxpay_app_id"`
-	WxpayMchID       string    `gorm:"column:wxpay_mch_id" json:"wxpay_mch_id"`
-	WxpayAPIv3Key    string    `gorm:"column:wxpay_apiv3_key" json:"wxpay_apiv3_key"`
-	WxpayCertSerial  string    `gorm:"column:wxpay_cert_serial" json:"wxpay_cert_serial"`
-	WxpayNotifyURL   string    `gorm:"column:wxpay_notify_url" json:"wxpay_notify_url"`
-	SpAppID          string    `gorm:"column:sp_appid" json:"sp_appid"`
-	SpMchID          string    `gorm:"column:sp_mchid" json:"sp_mchid"`
-	SpAPIv3Key       string    `gorm:"column:sp_apiv3_key" json:"sp_apiv3_key"`
-	SpCertSerial     string    `gorm:"column:sp_cert_serial" json:"sp_cert_serial"`
-	PartnerNotifyURL string    `gorm:"column:partner_notify_url" json:"partner_notify_url"`
-	UpdatedAt        time.Time `json:"updated_at"`
+	WxpayAppID                 string    `gorm:"column:wxpay_app_id" json:"wxpay_app_id"`
+	WxpayMchID                 string    `gorm:"column:wxpay_mch_id" json:"wxpay_mch_id"`
+	WxpayAPIv3Key              string    `gorm:"column:wxpay_apiv3_key" json:"wxpay_apiv3_key"`
+	WxpayCertSerial            string    `gorm:"column:wxpay_cert_serial" json:"wxpay_cert_serial"`
+	WxpayNotifyURL             string    `gorm:"column:wxpay_notify_url" json:"wxpay_notify_url"`
+	SpAppID                    string    `gorm:"column:sp_appid" json:"sp_appid"`
+	SpMchID                    string    `gorm:"column:sp_mchid" json:"sp_mchid"`
+	SpAPIv3Key                 string    `gorm:"column:sp_apiv3_key" json:"sp_apiv3_key"`
+	SpCertSerial               string    `gorm:"column:sp_cert_serial" json:"sp_cert_serial"`
+	PartnerNotifyURL           string    `gorm:"column:partner_notify_url" json:"partner_notify_url"`
+	UpdatedAt                  time.Time `json:"updated_at"`
 }
 
 func (PlatformSettings) TableName() string { return "platform_settings" }
