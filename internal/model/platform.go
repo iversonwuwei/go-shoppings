@@ -115,6 +115,11 @@ type PlatformSettings struct {
 	PlatformLogo     string    `json:"platform_logo"`
 	SupportPhone     string    `json:"support_phone"`
 	SupportEmail     string    `json:"support_email"`
+	PrivacyPolicyTitle         string    `gorm:"column:privacy_policy_title" json:"privacy_policy_title"`
+	PrivacyPolicyEffectiveDate string    `gorm:"column:privacy_policy_effective_date" json:"privacy_policy_effective_date"`
+	PrivacyPolicyContent       string    `gorm:"column:privacy_policy_content" json:"privacy_policy_content"`
+	PrivacyPolicyContactPhone  string    `gorm:"column:privacy_policy_contact_phone" json:"privacy_policy_contact_phone"`
+	PrivacyPolicyContactEmail  string    `gorm:"column:privacy_policy_contact_email" json:"privacy_policy_contact_email"`
 	WxpayAppID       string    `gorm:"column:wxpay_app_id" json:"wxpay_app_id"`
 	WxpayMchID       string    `gorm:"column:wxpay_mch_id" json:"wxpay_mch_id"`
 	WxpayAPIv3Key    string    `gorm:"column:wxpay_apiv3_key" json:"wxpay_apiv3_key"`

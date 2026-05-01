@@ -144,6 +144,8 @@ func New(d *Deps) *gin.Engine {
 		// 平台全局设置（平台名 / Logo / 平台微信支付商户号 / 客服联系方式）
 		sec.GET("/settings", d.PlatformGlobalH.Get)
 		sec.PUT("/settings", d.PlatformGlobalH.Update)
+		sec.GET("/privacy-policy", d.PlatformGlobalH.GetPrivacy)
+		sec.PUT("/privacy-policy", d.PlatformGlobalH.UpdatePrivacy)
 
 		// 通用文件上传（平台，tenant_id=0）
 		sec.POST("/upload/image", d.UploadH.Image)
@@ -221,6 +223,7 @@ func New(d *Deps) *gin.Engine {
 			}
 			response.OK(c, rows)
 		})
+		pub.GET("/privacy-policy", d.PlatformGlobalH.PublicPrivacy)
 		pub.GET("/regions", d.PlatformRegionH.PublicTree)
 		pub.POST("/apply", func(c *gin.Context) {
 			var body struct {
